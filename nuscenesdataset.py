@@ -23,7 +23,6 @@ from nuscenes.utils.geometry_utils import transform_matrix
 from nuscenes.map_expansion.map_api import NuScenesMap
 from time import time
 
-from utils.basic import print_, print_stats
 import utils.py
 import utils.geom
 import itertools
@@ -906,7 +905,6 @@ class NuscData(torch.utils.data.Dataset):
                 ).astype(np.int32)
             pts[:, [1, 0]] = pts[:, [0, 1]]
             cv2.fillPoly(img, [pts], ii+1.0)
-        # utils.py.print_stats('img', img)
 
         return torch.Tensor(img).unsqueeze(0), torch.Tensor(convert_egopose_to_matrix_numpy(egopose))
 
@@ -950,36 +948,22 @@ class NuscData(torch.utils.data.Dataset):
         clist_cam = utils.geom.get_clist_from_lrtlist(lrtlist_cam)
         lenlist, rtlist = utils.geom.split_lrtlist(lrtlist_cam) # B,N,3
         rlist_, tlist_ = utils.geom.split_rt(rtlist.reshape(B*N, 4, 4))
-        # print_('rlist_', rlist_)
-        # print_('tlist_', tlist_)
 
         x_vec = torch.zeros((B*N, 3), dtype=torch.float32, device=rlist_.device)
         x_vec[:, 0] = 1 # 0,0,1 
-        # x_vec[:, 2] = 1 # 0,0,1 
-        # print_('x_vec', x_vec)
-        # import ipdb; ipdb.set_trace()
         x_rot = torch.matmul(rlist_, x_vec.unsqueeze(2)).squeeze(2)
-        # print_('x_rot', x_rot)
-        # rylist = torch.atan2(x_rot[:,0],x_rot[:,2]).reshape(B, N)
-        # print_('rylist', rylist)
 
-        # rylist = utils.geom.rotm2eul(rlist_)[1]
-        # import ipdb; ipdb.set_trace()
         rylist = torch.atan2(x_rot[:, 0], x_rot[:, 2]).reshape(N)
         rylist = utils.geom.wrap2pi(rylist + np.pi/2.0)
         
         if False:
             # these are B x N x 3
-            # print_('lenlist', lenlist)
             sizelist = (torch.max(lenlist, dim=2)[0]).clamp(min=2)
-            # print_stats('sizelist', sizelist)
             sizelist = sizelist.clamp(min=4)
             radius = sizelist/4.0
         else:
             radius = 3
         center, offset = self.vox_util.xyz2circles(clist_cam, radius, self.Z, self.Y, self.X, soft=True, already_mem=False, also_offset=True)
-        # B,N,1/3,Z,Y,X
-        # print_stats('offset', offset)
 
         # zgrid, xgrid = torch.meshgrid(torch.arange(self.Z, dtype=torch.float), torch.arange(self.X, dtype=torch.float))
         # offset = torch.zeros((1, 2, self.Z, self.X), dtype=torch.float32)
@@ -1016,20 +1000,15 @@ class NuscData(torch.utils.data.Dataset):
         # # offset is B,N,3,Z,Y,X
         # masklist = self.vox_util.assemble_padded_obj_masklist(lrtlist_cam, torch.ones_like(lrtlist_cam[:,:,0]), self.Z, self.Y, self.X, additive_coeff=0.5)
         # # masklist is B,N,1,Z,Y,X
-        # print_stats('masklist', masklist)
 
         offset = offset * masklist
-        # print_stats('masked offset', offset)
 
         offset = torch.sum(offset, dim=1) # B,3,Z,Y,X
-        # print_stats('sumN offset', offset)
         
         offset = torch.stack([offset[:,0], offset[:,2]], dim=1) # B,2,Z,Y,X, containing the xz offset
-        # print_stats('xz offset', offset)
         min_offset = torch.min(offset, dim=3)[0] # B,2,Z,X
         max_offset = torch.max(offset, dim=3)[0] # B,2,Z,X
         offset = min_offset + max_offset
-        # print_stats('minmax offset', offset)
         
         center = torch.max(center, dim=1, keepdim=True)[0] # B,1,Z,Y,X
         # offset = offset * center.unsqueeze(2) # B,1,

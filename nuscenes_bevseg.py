@@ -356,21 +356,11 @@ def run_model(model, loss_fn, d, eff_B, eff_T, device='cuda:0', sw=None, is_trai
     total_loss = np.mean(total_losses)
     metrics['iou'] = np.mean(ious)
 
-    temporal_agg = False
     if sw is not None and sw.save_this:
         if model.module.use_radar or model.module.use_lidar:
             rad_occ_mem0 = __p0(rad_occ_mem0)
             sw.summ_occ('0_inputs/rad_occ_mem0', rad_occ_mem0)
         sw.summ_occ('0_inputs/occ_mem0', occ_mem0)
-
-        vis = []
-        bkg = []
-        for t in range(T):
-            vis.append(sw.summ_lrtlist_bev('', occ_mem0_g[t:t+1], lrtlist_cam0_g[t:t+1], scorelist[t:t+1], tidlist[t:t+1], vox_util, show_ids=True, only_return=True))
-            bkg.append(sw.summ_occ('', occ_mem0_g[t:t+1], only_return=True))
-        sw.summ_rgbs('0_inputs/lrtlist_mem0', vis, frame_ids=list(range(T)))
-
-        bkgs = utils.improc.preprocess_color(torch.stack(vis, dim=1)) 
 
         sw.summ_oned('2_outputs/seg_bev_g', seg_bev_g * (0.5+valid_bev_g*0.5), norm=False)
         sw.summ_oned('2_outputs/valid_bev_g', valid_bev_g, norm=False)

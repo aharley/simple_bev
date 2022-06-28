@@ -10,7 +10,6 @@ import utils.vox
 import utils.misc
 import utils.basic
 
-from utils.basic import print_, print_stats
 from torchvision.models.resnet import resnet18
 from efficientnet_pytorch import EfficientNet
 
