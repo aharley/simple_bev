@@ -365,7 +365,8 @@ def run_model(model, loss_fn, d, eff_B, eff_T, device='cuda:0', sw=None, is_trai
 
         vis = []
         for t in range(T):
-            vis.append(sw.summ_lrtlist_bev('', occ_mem0_g[t:t+1], lrtlist_cam0_g[t:t+1], scorelist[t:t+1], tidlist[t:t+1], vox_util, show_ids=True, only_return=True))
+            vis.append(sw.summ_lrtlist_bev('', occ_mem0_g[t:t+1], lrtlist_cam0_g[t:t+1], scorelist[t:t+1], tidlist[t:t+1],
+                                           vox_util, show_ids=True, only_return=True))
         sw.summ_rgbs('0_inputs/lrtlist_mem0', vis, frame_ids=list(range(T)))
 
         sw.summ_oned('2_outputs/seg_bev_g', seg_bev_g * (0.5+valid_bev_g*0.5), norm=False)

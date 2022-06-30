@@ -113,17 +113,17 @@ def balanced_occ_loss(pred, occ, free):
 
     return balanced_loss
 
-def run_model(model, loss_fn, d, eff_B, eff_T, device='cuda:0', sw=None, is_train=True):
+def run_model(model, loss_fn, d, B_par, T_loop, device='cuda:0', sw=None, is_train=True):
     metrics = {}
 
     imgs, rots, trans, intrins, pts0, extra0, pts, extra, lrtlist_velo, vislist, tidlist, scorelist, seg_bev_g, valid_bev_g, center_bev_g, offset_bev_g, radar_data, egopose = d
 
     # sometimes the batch size is too large to fit into the gpus
     # we factor the original batch size into B*T, where:
-    #     B is the effective batch size in each forward/backward pass
+    #     B is the batch size put onto the gpu for each forward/backward pass
     #     T is the imaginary "timesteps" of forward/backward passes we need to run
-    B=eff_B
-    T=eff_T
+    B = B_par
+    T = T_loop
     imgs = imgs.reshape(B, T, *imgs.size()[2:])
     rots = rots.reshape(B, T, *rots.size()[2:])
     trans = trans.reshape(B, T, *trans.size()[2:])
@@ -383,10 +383,10 @@ def main(
     shuffle=True,
     dset='trainval',
     do_val=True,
-    val_freq = 100,
-    save_freq = 1000,
-    batch_size = 40,
-    eff_batch_size = 8,
+    val_freq=100,
+    save_freq=1000,
+    batch_size=40,
+    batch_parallel=8,
     lr=3e-4,
     weight_decay=1e-7,
     grad_acc=1,
@@ -416,11 +416,13 @@ def main(
     device='cuda:0',
     device_ids=[0,1,2,3],
     ):
-    
+
+    print('batch_size', batch_size)
+    print('B_par', batch_parallel)
     B = batch_size
-    eff_B = eff_batch_size
-    eff_T = B // eff_B
-    assert (B == eff_B * eff_T)
+    B_par = batch_parallel
+    T_loop = B // B_par
+    assert (B == B_par * T_loop)
 
     # autogen a name
     model_name = "%02d" % B
@@ -470,7 +472,7 @@ def main(
         grid_conf=grid_conf, bsz=B, nworkers=nworkers,
         parser_name='vizdata',
         shuffle=shuffle,
-        seqlen=1,
+        seqlen=1, # we do NOT load temporal sequence here, but that can work with this dataloader
         nsweeps=nsweeps,
         get_tids=True,
     )
@@ -543,7 +545,7 @@ def main(
         # run training iteration
         iter_start_time = time.time()
             
-        total_loss, metrics = run_model(model, seg_loss_fn, sample, eff_B, eff_T, device, sw_t, is_train=True)
+        total_loss, metrics = run_model(model, seg_loss_fn, sample, B_par, T_loop, device, sw_t, is_train=True)
         
         if global_step % grad_acc == 0:
             torch.nn.utils.clip_grad_norm_(parameters, 5.0)
@@ -600,7 +602,7 @@ def main(
                 val_iterloader = iter(val_dataloader)
                 sample = next(val_iterloader)
             with torch.no_grad():
-                total_loss, metrics = run_model(model, seg_loss_fn, sample, eff_B, eff_T, device, sw_v, is_train=False)
+                total_loss, metrics = run_model(model, seg_loss_fn, sample, B_par, T_loop, device, sw_v, is_train=False)
 
             # update val running pools
             sw_v.summ_scalar('stats/total_loss', total_loss)
