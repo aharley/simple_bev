@@ -233,31 +233,41 @@ def get_rot(h):
     ])
 
 
-def img_transform(img, post_rot, post_tran,
-                  resize, resize_dims, crop,
-                  flip, rotate):
+def img_transform(img, resize_dims, crop):
     # adjust image
     img = img.resize(resize_dims)
+    # print('img', img.shape)
+    # _, H, W = img.shape
+    # # center it
+    
+    # fH, fW = final_dims
+
+    # # if we increased the size, we'll 
+    # crop_h = int((H - fH)/2)
+    # if H > fH:
+    #     # we have more pixels than we need
+    #     # we'll crop inside
+    #     crop_h = int((H - fH)/2)
+    # else:
+    #     crop_h = int((fH - H)/2)
+
+    #     # crop_h = int(max(0, newH - fH) / 2)
+    #     # crop_w = int(max(0, newW - fW) / 2)
+    
+
     img = img.crop(crop)
-    if flip:
-        img = img.transpose(method=Image.FLIP_LEFT_RIGHT)
-    img = img.rotate(rotate)
+    return img
 
-    # post-homography transformation
-    post_rot *= resize
-    post_tran -= torch.Tensor(crop[:2])
-    if flip:
-        A = torch.Tensor([[-1, 0], [0, 1]])
-        b = torch.Tensor([crop[2] - crop[0], 0])
-        post_rot = A.matmul(post_rot)
-        post_tran = A.matmul(post_tran) + b
-    A = get_rot(rotate/180*np.pi)
-    b = torch.Tensor([crop[2] - crop[0], crop[3] - crop[1]]) / 2
-    b = A.matmul(-b) + b
-    post_rot = A.matmul(post_rot)
-    post_tran = A.matmul(post_tran) + b
+    # # post-homography transformation
+    # post_rot *= resize
+    # post_tran -= torch.Tensor(crop[:2])
+    # A = get_rot(rotate/180*np.pi)
+    # b = torch.Tensor([crop[2] - crop[0], crop[3] - crop[1]]) / 2
+    # b = A.matmul(-b) + b
+    # post_rot = A.matmul(post_rot)
+    # post_tran = A.matmul(post_tran) + b
 
-    return img, post_rot, post_tran
+    # return img, post_rot, post_tran
 
 class NormalizeInverse(torchvision.transforms.Normalize):
     #  https://discuss.pytorch.org/t/simple-way-to-inverse-transform-normalization/4821/8
@@ -389,13 +399,12 @@ def get_val_info(model, valloader, loss_fn, device, use_tqdm=False, max_iters=No
                     break
 
             if use_lidar:
-                allimgs, rots, trans, intrins, post_rots, post_trans, pts, binimgs = batch
+                allimgs, rots, trans, intrins, pts, binimgs = batch
             else:
-                allimgs, rots, trans, intrins, post_rots, post_trans, binimgs = batch
+                allimgs, rots, trans, intrins, binimgs = batch
                 
             preds = model(allimgs.to(device), rots.to(device),
-                          trans.to(device), intrins.to(device), post_rots.to(device),
-                          post_trans.to(device))
+                          trans.to(device), intrins.to(device))
             binimgs = binimgs.to(device)
 
             # loss
@@ -741,11 +750,29 @@ class NuscData(torch.utils.data.Dataset):
         fH, fW = self.data_aug_conf['final_dim']
         if self.is_train:
             if 'resize_lim' in self.data_aug_conf and self.data_aug_conf['resize_lim'] is not None:
+                # print('resize_lim', self.data_aug_conf['resize_lim'])
                 resize = np.random.uniform(*self.data_aug_conf['resize_lim'])
+                # print('resize', resize)
             else:
                 resize = self.data_aug_conf['resize_scale']
-            resize_dims = (int(W*resize), int(H*resize))
+
+            # print('resize', resize)
+
+            resize_dims = (int(fW*resize), int(fH*resize))
+
+            # resize_dims = (int(W*resize), int(H*resize))
             newW, newH = resize_dims
+            # print('W, H', W, H)
+            # print('newW, newH', newW, newH)
+
+            # center it
+            crop_h = int((newH - fH)/2)
+            crop_w = int((newW - fW)/2)
+
+            crop_offset = self.data_aug_conf['crop_offset']
+            crop_w = crop_w + int(np.random.uniform(-crop_offset, crop_offset))
+            crop_h = crop_h + int(np.random.uniform(-crop_offset, crop_offset))
+            # crop_h = int((1 - np.random.uniform(*self.data_aug_conf['bot_pct_lim']))*newH) - fH
 
             # crop_h = 46
             # crop_w = int(max(0, (resized_width - final_width) / 2))
@@ -760,22 +787,68 @@ class NuscData(torch.utils.data.Dataset):
 
             # crop_h = int((1 - np.random.uniform(*self.data_aug_conf['bot_pct_lim']))*newH) - fH
             
-            crop_h = int(np.random.uniform(0, max(0, newH - fH)))
-            crop_w = int(np.random.uniform(0, max(0, newW - fW)))
+            # crop_h = int(np.random.uniform(0, max(0, newH - fH)))
+            # crop_w = int(np.random.uniform(0, max(0, newW - fW)))
+            # crop_h = int(np.random.uniform(0-newH//10, max(0, newH - fH)))
+            # crop_w = int(np.random.uniform(0-newH//10, max(0, newW - fW)))
 
+            # crop_w = int(np.random.uniform(-W//10, W//10))
+            # crop_h = int(np.random.uniform(-H//10, H//10))
+
+            # the clean version i'm imagining is:
+            # first, resize the image a random amount
+            # then, center it to fit into my final bounds
+            # then, crop a random amount 
+
+            # crop_w = int(np.random.uniform(-50, 50))
+            # crop_h = int(np.random.uniform(-50, 50))
+            # resize = np.random.uniform(0.9, 1.1)
+            
+            # crop_w = int(np.random.uniform(-newW//10, newW//10))
+            # crop_h = int(np.random.uniform(-newH//10, newH//10))
+
+            # # crop = (crop_w, crop_h, crop_w + W, crop_h + H)
             crop = (crop_w, crop_h, crop_w + fW, crop_h + fH)
+
+
+            # crop_w = int(np.random.uniform(0-newH//10, max(0, newW - fW)))
+            # crop_h = -0
+            # crop_w = -0
+
+            # crop_x0 = int(np.random.uniform(-100, 100))
+            # crop_x1 = int(np.random.uniform(-100, 100))
+            # crop_w = int(np.random.uniform(0, max(0, newW - fW)))
+
+
+
+            # if newW < W: 
+            #     crop_w = int(max(0, fW - newW) / 2)
+            # else:
+            #     crop_w = int(max(0, newW - fW) / 2)
+
+            # if newH < H: 
+            #     crop_h = int(max(0, fH - newH) / 2)
+            # else:
+            #     crop_h = int(max(0, newH - fH) / 2)
+
+            # crop_h = int(max(0, newH - fH) / 2)
+            # crop_w = int(max(0, newW - fW) / 2)
+
+            # crop = (crop_w, crop_h, crop_w + fW, crop_h + fH)
 
             # print('crop', crop)
             
-            flip = False
-            if self.data_aug_conf['rand_flip'] and np.random.choice([0, 1]):
-                flip = True
-            rotate = np.random.uniform(*self.data_aug_conf['rot_lim'])
         else:
-            resize = max(fH/H, fW/W)
-            resize_dims = (int(W*resize), int(H*resize))
-            newW, newH = resize_dims
-            
+            # resize = 1.0
+
+            # resize = max(fH/H, fW/W)
+            # resize_dims = (int(W*resize), int(H*resize))
+            # newW, newH = resize_dims
+
+            resize_dims = (fW, fH)
+
+            # crop_h = int((newH - fH)/2)
+            # crop_w = int((newW - fW)/2)
             # crop_h = int((1 - np.mean(self.data_aug_conf['bot_pct_lim']))*newH) - fH
             # crop_w = int(max(0, newW - fW) / 2)
 
@@ -783,45 +856,47 @@ class NuscData(torch.utils.data.Dataset):
             # crop_h = int(max(0, (newH - fH) / 2))
             # crop_w = int(max(0, (newW - fW) / 2))
 
-            # crop_h = int((1 - np.mean(self.data_aug_conf['bot_pct_lim']))*newH) - fH
-            crop_h = int(max(0, newH - fH) / 2)
-            crop_w = int(max(0, newW - fW) / 2)
-            
+            # # crop_h = int((1 - np.mean(self.data_aug_conf['bot_pct_lim']))*newH) - fH
+            # crop_h = int(max(0, newH - fH) / 2)
+            # crop_w = int(max(0, newW - fW) / 2)
+
+            crop_h = 0
+            crop_w = 0
 
             crop = (crop_w, crop_h, crop_w + fW, crop_h + fH)
-            flip = False
-            rotate = 0
-        return resize, resize_dims, crop, flip, rotate
+        return resize_dims, crop
 
     def get_image_data(self, rec, cams, include_rgbs=True):
         imgs = []
         rots = []
         trans = []
         intrins = []
-        post_rots = []
-        post_trans = []
         for cam in cams:
             samp = self.nusc.get('sample_data', rec['data'][cam])
             if include_rgbs:
                 imgname = os.path.join(self.nusc.dataroot, samp['filename'])
                 img = Image.open(imgname)
-            post_rot = torch.eye(2)
-            post_tran = torch.zeros(2)
 
             sens = self.nusc.get('calibrated_sensor', samp['calibrated_sensor_token'])
             intrin = torch.Tensor(sens['camera_intrinsic'])
             rot = torch.Tensor(Quaternion(sens['rotation']).rotation_matrix)
             tran = torch.Tensor(sens['translation'])
 
+            resize_dims, crop = self.sample_augmentation()
 
+            H, W = self.data_aug_conf['H'], self.data_aug_conf['W']
+            # fH, fW = self.data_aug_conf['final_dim']
+            sx = resize_dims[0]/float(W)
+            sy = resize_dims[1]/float(H)
 
-            # augmentation (resize, crop, horizontal flip, rotate)
-            resize, resize_dims, crop, flip, rotate = self.sample_augmentation()
-
+            # final_dims = self.data_aug_conf['final_dim']
+            print('sy, sx', sy, sx)
+        
             # print('resize', resize)
             # intrin = utils.py.scale_intrinsics(intrin, resize, resize)
-            intrin = utils.geom.scale_intrinsics(intrin.unsqueeze(0), resize, resize).squeeze(0)
-            # print('crop', crop)
+            intrin = utils.geom.scale_intrinsics(intrin.unsqueeze(0), sx, sy).squeeze(0)
+
+            print('crop', crop)
             # crop = (0,0,352,128)
 
             fx, fy, x0, y0 = utils.geom.split_intrinsics(intrin.unsqueeze(0))
@@ -831,22 +906,17 @@ class NuscData(torch.utils.data.Dataset):
 
             pix_T_cam = utils.geom.merge_intrinsics(fx, fy, new_x0, new_y0)
             intrin = pix_T_cam.squeeze(0)
+
             
 
             if include_rgbs:
-                img, post_rot2, post_tran2 = img_transform(img, post_rot, post_tran,
-                                                         resize=resize,
-                                                         resize_dims=resize_dims,
-                                                         crop=crop,
-                                                         flip=flip,
-                                                         rotate=rotate,
-                                                         )
+                img = img_transform(img, resize_dims, crop)
             
-                # for convenience, make augmentation matrices 3x3
-                post_tran = torch.zeros(3)
-                post_rot = torch.eye(3)
-                post_tran[:2] = post_tran2
-                post_rot[:2, :2] = post_rot2
+                # # for convenience, make augmentation matrices 3x3
+                # post_tran = torch.zeros(3)
+                # post_rot = torch.eye(3)
+                # post_tran[:2] = post_tran2
+                # post_rot[:2, :2] = post_rot2
                 imgs.append(totorch_img(img))
             else:
                 newW, newH = resize_dims
