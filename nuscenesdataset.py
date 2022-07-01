@@ -890,13 +890,13 @@ class NuscData(torch.utils.data.Dataset):
             sy = resize_dims[1]/float(H)
 
             # final_dims = self.data_aug_conf['final_dim']
-            print('sy, sx', sy, sx)
+            # print('sy, sx', sy, sx)
         
             # print('resize', resize)
             # intrin = utils.py.scale_intrinsics(intrin, resize, resize)
             intrin = utils.geom.scale_intrinsics(intrin.unsqueeze(0), sx, sy).squeeze(0)
 
-            print('crop', crop)
+            # print('crop', crop)
             # crop = (0,0,352,128)
 
             fx, fy, x0, y0 = utils.geom.split_intrinsics(intrin.unsqueeze(0))
