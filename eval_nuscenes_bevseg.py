@@ -431,8 +431,10 @@ def main(
     writer_ev = SummaryWriter(log_dir + '/' + model_name + '/ev', max_queue=10, flush_secs=60)
 
     # set up dataloader
-    final_dim = (224 * resolution_scale, 480 * resolution_scale)
-    resize_scale = 0.31 * resolution_scale
+    # final_dim = (224 * resolution_scale, 480 * resolution_scale)
+    final_dim = (224 * resolution_scale, 400 * resolution_scale)
+    # resize_scale = 0.31 * resolution_scale
+    resize_scale = 1.0
     xbound = [-50.0, 50.0, 0.5]
     ybound = [-50.0, 50.0, 0.5]
     zbound = [-5.0, 5.0, 10.0]
@@ -455,7 +457,7 @@ def main(
     }
     _, val_dataloader = compile_data(
         dset, data_dir, data_aug_conf=data_aug_conf,
-        grid_conf=grid_conf, bsz=B, nworkers=0,
+        grid_conf=grid_conf, bsz=B, nworkers=nworkers,
         parser_name='vizdata',
         shuffle=shuffle,
         seqlen=1,
@@ -544,10 +546,10 @@ def main(
         sw_ev.summ_scalar('pooled/time_per_batch', time_pool_ev.mean())
         sw_ev.summ_scalar('pooled/time_per_el', time_pool_ev.mean()/float(B))
 
-        print('%s; step %06d/%d; rtime %.2f; itime %.2f; loss %.5f; iou_ev %.2f' % (
+        print('%s; step %06d/%d; rtime %.2f; itime %.2f; loss %.5f; iou_ev %.1f' % (
             model_name, global_step, max_iters, read_time, iter_time,
-            total_loss.item(), intersection/union))
-    print('final %s mean iou' % dset, intersection/union)
+            total_loss.item(), 100*intersection/union))
+    print('final %s mean iou' % dset, 100*intersection/union)
     
     writer_ev.close()
             

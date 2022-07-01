@@ -46,6 +46,15 @@ Z, Y, X = 200, 8, 200
 def requires_grad(parameters, flag=True):
     for p in parameters:
         p.requires_grad = flag
+        
+def fetch_optimizer(lr, wdecay, epsilon, num_steps, params):
+    """ Create the optimizer and learning rate scheduler """
+    optimizer = torch.optim.AdamW(params, lr=lr, weight_decay=wdecay, eps=epsilon)
+
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, lr, num_steps+100,
+        pct_start=0.05, cycle_momentum=False, anneal_strategy='linear')
+
+    return optimizer, scheduler
 
 class SimpleLoss(torch.nn.Module):
     def __init__(self, pos_weight):
@@ -442,10 +451,12 @@ def main(
         writer_v = SummaryWriter(os.path.join(log_dir, model_name + '/v'), max_queue=10, flush_secs=60)
 
     # set up dataloaders
-    final_dim = (224 * resolution_scale, 480 * resolution_scale)
-    resize_scale = 0.31 * resolution_scale
-    resize_lim = [0.31*resolution_scale, 0.35*resolution_scale]
-    resize_lim = None
+    # final_dim = (224 * resolution_scale, 480 * resolution_scale)
+    # resize_scale = 0.31 * resolution_scale
+    # resize_lim = [0.31*resolution_scale, 0.35*resolution_scale]
+    final_dim = (224 * resolution_scale, 400 * resolution_scale)
+    crop_offset = 50
+    resize_lim = [0.9,1.1]
     xbound = [-50.0, 50.0, 0.5]
     ybound = [-50.0, 50.0, 0.5]
     zbound = [-5.0, 5.0, 10.0]
@@ -457,7 +468,8 @@ def main(
         'dbound': dbound,
     }
     data_aug_conf = {
-        'resize_scale': resize_scale,
+        # 'resize_scale': resize_scale,
+        'crop_offset': crop_offset,
         'resize_lim': resize_lim,
         'final_dim': final_dim,
         'rot_lim': rot_lim,
@@ -485,7 +497,8 @@ def main(
     model = model.to(device)
     model = torch.nn.DataParallel(model, device_ids=device_ids)
     parameters = list(model.parameters())
-    optimizer = torch.optim.Adam(parameters, lr=lr, weight_decay=weight_decay)
+    # optimizer = torch.optim.Adam(parameters, lr=lr, weight_decay=weight_decay)
+    optimizer, scheduler = fetch_optimizer(lr, 0.0001, 1e-8, max_iters, model.parameters())
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print('total_params', total_params)
 
@@ -550,6 +563,7 @@ def main(
         if global_step % grad_acc == 0:
             torch.nn.utils.clip_grad_norm_(parameters, 5.0)
             optimizer.step()
+            scheduler.step()
             optimizer.zero_grad()
 
         # update logging pools
@@ -637,13 +651,13 @@ def main(
         sw_t.summ_scalar('pooled/time_per_el', time_pool_t.mean()/float(B))
 
         if do_val:
-            print('%s; step %06d/%d; rtime %.2f; itime %.2f; loss %.5f; iou_t %.2f; iou_v %.2f' % (
+            print('%s; step %06d/%d; rtime %.2f; itime %.2f; loss %.5f; iou_t %.1f; iou_v %.1' % (
                 model_name, global_step, max_iters, read_time, iter_time,
-                total_loss.item(), iou_pool_t.mean(), iou_pool_v.mean()))
+                total_loss.item(), 100*iou_pool_t.mean(), 100*iou_pool_v.mean()))
         else:
-            print('%s; step %06d/%d; rtime %.2f; itime %.2f; loss %.5f; epe_t %.2f; iou_t %.2f' % (
+            print('%s; step %06d/%d; rtime %.2f; itime %.2f; loss %.5f; iou_t %.2f' % (
                 model_name, global_step, max_iters, read_time, iter_time,
-                total_loss.item(), epe_pool_t.mean(), iou_pool_t.mean()))
+                total_loss.item(), 100*iou_pool_t.mean()))
             
     writer_t.close()
     if do_val:
