@@ -401,7 +401,6 @@ def main(
     rand_flip=False,
     ncams=6,
     nsweeps=3,
-    rot_lim=(-0,0),
     # model
     encoder_type='res101',
     use_radar=False,
@@ -431,10 +430,7 @@ def main(
     writer_ev = SummaryWriter(log_dir + '/' + model_name + '/ev', max_queue=10, flush_secs=60)
 
     # set up dataloader
-    # final_dim = (224 * resolution_scale, 480 * resolution_scale)
     final_dim = (224 * resolution_scale, 400 * resolution_scale)
-    # resize_scale = 0.31 * resolution_scale
-    resize_scale = 1.0
     xbound = [-50.0, 50.0, 0.5]
     ybound = [-50.0, 50.0, 0.5]
     zbound = [-5.0, 5.0, 10.0]
@@ -446,9 +442,7 @@ def main(
         'dbound': dbound,
     }
     data_aug_conf = {
-        'resize_scale': resize_scale,
         'final_dim': final_dim,
-        'rot_lim': rot_lim,
         'H': 900, 'W': 1600,
         'rand_flip': rand_flip,
         'cams': ['CAM_FRONT_LEFT', 'CAM_FRONT', 'CAM_FRONT_RIGHT',
@@ -523,6 +517,8 @@ def main(
 
         intersection += metrics['intersection']
         union += metrics['union']
+
+        sw_ev.summ_scalar('pooled/iou_ev', intersection/union)
         
         loss_pool_ev.update([total_loss])
         sw_ev.summ_scalar('pooled/total_loss', loss_pool_ev.mean())
