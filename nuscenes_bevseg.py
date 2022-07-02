@@ -414,7 +414,6 @@ def main(
     rand_flip=False,
     ncams=6,
     nsweeps=3,
-    rot_lim=(-0,0),
     # model
     encoder_type='res101',
     use_radar=False,
@@ -451,12 +450,9 @@ def main(
         writer_v = SummaryWriter(os.path.join(log_dir, model_name + '/v'), max_queue=10, flush_secs=60)
 
     # set up dataloaders
-    # final_dim = (224 * resolution_scale, 480 * resolution_scale)
-    # resize_scale = 0.31 * resolution_scale
-    # resize_lim = [0.31*resolution_scale, 0.35*resolution_scale]
     final_dim = (224 * resolution_scale, 400 * resolution_scale)
-    crop_offset = 50
     resize_lim = [0.9,1.1]
+    crop_offset = int(final_dim[0]*(1-resize_lim[0]))
     xbound = [-50.0, 50.0, 0.5]
     ybound = [-50.0, 50.0, 0.5]
     zbound = [-5.0, 5.0, 10.0]
@@ -468,11 +464,9 @@ def main(
         'dbound': dbound,
     }
     data_aug_conf = {
-        # 'resize_scale': resize_scale,
         'crop_offset': crop_offset,
         'resize_lim': resize_lim,
         'final_dim': final_dim,
-        'rot_lim': rot_lim,
         'H': 900, 'W': 1600,
         'rand_flip': False, # if specified, we do rand flip in the network forward pass
         'cams': ['CAM_FRONT_LEFT', 'CAM_FRONT', 'CAM_FRONT_RIGHT',
