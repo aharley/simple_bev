@@ -370,6 +370,7 @@ def run_model(model, loss_fn, d, B_par, T_loop, device='cuda:0', sw=None, is_tra
             rad_occ_mem0 = __p0(rad_occ_mem0)
             sw.summ_occ('0_inputs/rad_occ_mem0', rad_occ_mem0)
         sw.summ_occ('0_inputs/occ_mem0', occ_mem0)
+        sw.summ_rgb('0_inputs/rgb_camXs', torch.cat(rgb_camXs[0:1,0].unbind(1), dim=-1))
 
         sw.summ_oned('2_outputs/seg_bev_g', seg_bev_g * (0.5+valid_bev_g*0.5), norm=False)
         sw.summ_oned('2_outputs/valid_bev_g', valid_bev_g, norm=False)
@@ -385,44 +386,45 @@ def run_model(model, loss_fn, d, B_par, T_loop, device='cuda:0', sw=None, is_tra
     return total_loss, metrics
     
 def main(
-    exp_name='debug',
-    # training
-    max_iters=100000,
-    log_freq=1000,
-    shuffle=True,
-    dset='trainval',
-    do_val=True,
-    val_freq=100,
-    save_freq=1000,
-    batch_size=40,
-    batch_parallel=8,
-    lr=3e-4,
-    weight_decay=1e-7,
-    grad_acc=1,
-    nworkers=12,
-    # data/log/save/load directories
-    data_dir='/home/scratch/zhaoyuaf/nuscenes/',
-    log_dir='logs_nuscenes_bevseg',
-    ckpt_dir='checkpoints/',
-    keep_latest=3,
-    init_dir='',
-    ignore_load='',
-    load_step=False,
-    load_optimizer=False,
-    # data
-    resolution_scale=2,
-    rand_flip=False,
-    ncams=6,
-    nsweeps=3,
-    # model
-    encoder_type='res101',
-    use_radar=False,
-    use_lidar=False,
-    do_metaradar=False,
-    do_rgbcompress=True,
-    # cuda
-    device='cuda:0',
-    device_ids=[0,1,2,3],
+        exp_name='debug',
+        # training
+        max_iters=100000,
+        log_freq=1000,
+        shuffle=True,
+        dset='trainval',
+        do_val=True,
+        val_freq=100,
+        save_freq=1000,
+        batch_size=40,
+        batch_parallel=8,
+        lr=3e-4,
+        use_scheduler=False,
+        weight_decay=1e-7,
+        grad_acc=1,
+        nworkers=12,
+        # data/log/save/load directories
+        data_dir='/home/scratch/zhaoyuaf/nuscenes/',
+        log_dir='logs_nuscenes_bevseg',
+        ckpt_dir='checkpoints/',
+        keep_latest=3,
+        init_dir='',
+        ignore_load='',
+        load_step=False,
+        load_optimizer=False,
+        # data
+        resolution_scale=2,
+        rand_flip=False,
+        ncams=6,
+        nsweeps=3,
+        # model
+        encoder_type='res101',
+        use_radar=False,
+        use_lidar=False,
+        do_metaradar=False,
+        do_rgbcompress=True,
+        # cuda
+        device='cuda:0',
+        device_ids=[0,1,2,3],
     ):
 
     print('batch_size', batch_size)
@@ -468,7 +470,6 @@ def main(
         'resize_lim': resize_lim,
         'final_dim': final_dim,
         'H': 900, 'W': 1600,
-        'rand_flip': False, # if specified, we do rand flip in the network forward pass
         'cams': ['CAM_FRONT_LEFT', 'CAM_FRONT', 'CAM_FRONT_RIGHT',
                  'CAM_BACK_LEFT', 'CAM_BACK', 'CAM_BACK_RIGHT'],
         'Ncams': ncams,
@@ -491,8 +492,11 @@ def main(
     model = model.to(device)
     model = torch.nn.DataParallel(model, device_ids=device_ids)
     parameters = list(model.parameters())
-    # optimizer = torch.optim.Adam(parameters, lr=lr, weight_decay=weight_decay)
-    optimizer, scheduler = fetch_optimizer(lr, 0.0001, 1e-8, max_iters, model.parameters())
+    if use_scheduler:
+        optimizer, scheduler = fetch_optimizer(lr, 0.0001, 1e-8, max_iters, model.parameters())
+    else:
+        optimizer = torch.optim.Adam(parameters, lr=lr, weight_decay=weight_decay)
+    
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print('total_params', total_params)
 
@@ -557,7 +561,8 @@ def main(
         if global_step % grad_acc == 0:
             torch.nn.utils.clip_grad_norm_(parameters, 5.0)
             optimizer.step()
-            scheduler.step()
+            if use_scheduler:
+                scheduler.step()
             optimizer.zero_grad()
 
         # update logging pools
@@ -645,11 +650,11 @@ def main(
         sw_t.summ_scalar('pooled/time_per_el', time_pool_t.mean()/float(B))
 
         if do_val:
-            print('%s; step %06d/%d; rtime %.2f; itime %.2f; loss %.5f; iou_t %.1f; iou_v %.1' % (
+            print('%s; step %06d/%d; rtime %.2f; itime %.2f; loss %.5f; iou_t %.1f; iou_v %.1f' % (
                 model_name, global_step, max_iters, read_time, iter_time,
                 total_loss.item(), 100*iou_pool_t.mean(), 100*iou_pool_v.mean()))
         else:
-            print('%s; step %06d/%d; rtime %.2f; itime %.2f; loss %.5f; iou_t %.2f' % (
+            print('%s; step %06d/%d; rtime %.2f; itime %.2f; loss %.5f; iou_t %.1f' % (
                 model_name, global_step, max_iters, read_time, iter_time,
                 total_loss.item(), 100*iou_pool_t.mean()))
             
