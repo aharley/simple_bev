@@ -108,7 +108,7 @@ class Decoder(nn.Module):
                 nn.Conv2d(shared_out_channels, 2, kernel_size=1, padding=0),
             )
 
-    def forward(self, x, bev_flip_index=None):
+    def forward(self, x, bev_flip_indices=None):
         b, c, h, w = x.shape
 
         # (H, W)
@@ -135,8 +135,10 @@ class Decoder(nn.Module):
         # Third upsample to (H, W)
         x = self.up1_skip(x, skip_x['1'])
 
-        if bev_flip_index is not None:
-            x[bev_flip_index] = torch.flip(x[bev_flip_index], [-1])
+        if bev_flip_indices is not None:
+            bev_flip1_index, bev_flip2_index = bev_flip_indices
+            x[bev_flip2_index] = torch.flip(x[bev_flip2_index], [-2]) # note [-2] instead of [-3], since Y is gone now
+            x[bev_flip1_index] = torch.flip(x[bev_flip1_index], [-1])
 
         feat_output = self.feat_head(x)
         segmentation_output = self.segmentation_head(x)
@@ -411,11 +413,17 @@ class Segnet(nn.Module):
         mask_mems = (torch.abs(feat_mems) > 0).float()
         feat_mem = utils.basic.reduce_masked_mean(feat_mems, mask_mems, dim=1) # B, C, Z, Y, X
 
-        # bev compressing
         if self.rand_flip:
-            self.bev_flip_index = np.random.choice([0,1], B).astype(bool)
-            feat_mem[self.bev_flip_index] = torch.flip(feat_mem[self.bev_flip_index], [-1])
+            self.bev_flip1_index = np.random.choice([0,1], B).astype(bool)
+            self.bev_flip2_index = np.random.choice([0,1], B).astype(bool)
+            feat_mem[self.bev_flip1_index] = torch.flip(feat_mem[self.bev_flip1_index], [-1])
+            feat_mem[self.bev_flip2_index] = torch.flip(feat_mem[self.bev_flip2_index], [-3])
 
+            if rad_occ_mem0 is not None:
+                rad_occ_mem0[self.bev_flip1_index] = torch.flip(rad_occ_mem0[self.bev_flip1_index], [-1])
+                rad_occ_mem0[self.bev_flip2_index] = torch.flip(rad_occ_mem0[self.bev_flip2_index], [-3])
+
+        # bev compressing
         if self.use_radar:
             assert(rad_occ_mem0 is not None)
             if not self.do_metaradar:
@@ -442,7 +450,7 @@ class Segnet(nn.Module):
                 feat_bev = torch.sum(feat_mem, dim=3)
 
         # bev decoder
-        out_dict = self.decoder(feat_bev, self.bev_flip_index if self.rand_flip else None)
+        out_dict = self.decoder(feat_bev, (self.bev_flip1_index, self.bev_flip2_index) if self.rand_flip else None)
 
         raw_e = out_dict['raw_feat']
         feat_e = out_dict['feat']
