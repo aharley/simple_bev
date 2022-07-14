@@ -408,7 +408,7 @@ def main(
         ckpt_dir='checkpoints/',
         keep_latest=3,
         init_dir='',
-        ignore_load='',
+        ignore_load=None,
         load_step=False,
         load_optimizer=False,
         # data
@@ -453,17 +453,15 @@ def main(
 
     # set up dataloaders
     final_dim = (224 * resolution_scale, 400 * resolution_scale)
-    resize_lim = [0.9,1.1]
+    resize_lim = [0.8,1.2]
     crop_offset = int(final_dim[0]*(1-resize_lim[0]))
     xbound = [-50.0, 50.0, 0.5]
     ybound = [-50.0, 50.0, 0.5]
     zbound = [-5.0, 5.0, 10.0]
-    dbound = [4.0, 45.0, 1.0]
     grid_conf = {
         'xbound': xbound,
         'ybound': ybound,
         'zbound': zbound,
-        'dbound': dbound,
     }
     data_aug_conf = {
         'crop_offset': crop_offset,
@@ -487,7 +485,7 @@ def main(
     val_iterloader = iter(val_dataloader)
 
     # set up model & seg loss
-    seg_loss_fn = SimpleLoss(2.13).to(device)
+    seg_loss_fn = SimpleLoss(2.13).to(device) # value from lift-splat
     model = Segnet(Z, Y, X, use_radar=use_radar, use_lidar=use_lidar, do_metaradar=do_metaradar, do_rgbcompress=do_rgbcompress, encoder_type=encoder_type, rand_flip=rand_flip)
     model = model.to(device)
     model = torch.nn.DataParallel(model, device_ids=device_ids)
