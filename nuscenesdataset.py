@@ -122,7 +122,7 @@ def get_lidar_data(nusc, sample_rec, nsweeps, min_distance):
 
     return points
 
-def get_radar_data(nusc, sample_rec, nsweeps, min_distance):
+def get_radar_data(nusc, sample_rec, nsweeps, min_distance, use_radar_filters):
     """
     Returns at most nsweeps of lidar in the ego frame.
     Returned tensor is 5(x, y, z, reflectance, dt, ring_index) x N
@@ -143,8 +143,10 @@ def get_radar_data(nusc, sample_rec, nsweeps, min_distance):
     # Homogeneous transformation matrix from global to _current_ ego car frame.
     car_from_global = transform_matrix(ref_pose_rec['translation'], Quaternion(ref_pose_rec['rotation']),inverse=True)
 
-    # RadarPointCloud.disable_filters()
-    RadarPointCloud.default_filters()
+    if use_radar_filters:
+        RadarPointCloud.default_filters()
+    else:
+        RadarPointCloud.disable_filters()
 
     # Aggregate current and previous sweeps.
     # from all radars 
@@ -580,7 +582,7 @@ def get_local_map(nmap, center, stretch, layer_names, line_names):
 
 
 class NuscData(torch.utils.data.Dataset):
-    def __init__(self, nusc, is_train, data_aug_conf, grid_conf, nsweeps=1, include_extra=False, drop_rings=False, seqlen=1, cam_id=1, include_rgbs=True, get_tids=False, temporal_aug=False):
+    def __init__(self, nusc, is_train, data_aug_conf, grid_conf, nsweeps=1, include_extra=False, drop_rings=False, seqlen=1, cam_id=1, include_rgbs=True, get_tids=False, temporal_aug=False, use_radar_filters=False):
         self.nusc = nusc
         self.is_train = is_train
         self.data_aug_conf = data_aug_conf
@@ -589,6 +591,7 @@ class NuscData(torch.utils.data.Dataset):
         self.drop_rings = drop_rings
         self.include_extra = include_extra
         self.include_rgbs = include_rgbs
+        self.use_radar_filters = use_radar_filters
 
         self.seqlen = seqlen
         self.cam_id = cam_id
@@ -943,7 +946,7 @@ class NuscData(torch.utils.data.Dataset):
             return torch.Tensor(pts)[:3]  # x,y,z
 
     def get_radar_data(self, rec, nsweeps, include_extra=False):
-        pts = get_radar_data(self.nusc, rec, nsweeps=nsweeps, min_distance=2.2)
+        pts = get_radar_data(self.nusc, rec, nsweeps=nsweeps, min_distance=2.2, use_radar_filters=self.use_radar_filters)
         return torch.Tensor(pts)
         # if include_extra:
         #     return torch.Tensor(pts)
@@ -1507,7 +1510,7 @@ def worker_rnd_init(x):
 
 def compile_data(version, dataroot, data_aug_conf, grid_conf, bsz,
                  nworkers, parser_name, shuffle=True, nsweeps=1, nworkers_val=1, include_extra=True, drop_rings=False, seqlen=1, cam_id=1, get_tids=False,
-                 include_rgbs=True, temporal_aug=False):
+                 include_rgbs=True, temporal_aug=False, use_radar_filters=False):
     print('loading nuscenes...')
     nusc = NuScenes(version='v1.0-{}'.format(version),
                     dataroot=os.path.join(dataroot, version),
@@ -1528,7 +1531,8 @@ def compile_data(version, dataroot, data_aug_conf, grid_conf, bsz,
                        cam_id=cam_id,
                        include_rgbs=include_rgbs,
                        get_tids=get_tids,
-                       temporal_aug=temporal_aug)
+                       temporal_aug=temporal_aug,
+                       use_radar_filters=use_radar_filters)
     valdata = parser(nusc,
                      is_train=False,
                      data_aug_conf=data_aug_conf,
@@ -1539,7 +1543,8 @@ def compile_data(version, dataroot, data_aug_conf, grid_conf, bsz,
                      cam_id=cam_id,
                      include_rgbs=include_rgbs,
                      get_tids=get_tids,
-                     temporal_aug=False)
+                     temporal_aug=False,
+                     use_radar_filters=use_radar_filters)
 
     trainloader = torch.utils.data.DataLoader(traindata, batch_size=bsz,
                                               shuffle=shuffle,

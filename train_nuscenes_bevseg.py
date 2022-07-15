@@ -413,12 +413,13 @@ def main(
         load_optimizer=False,
         # data
         resolution_scale=2,
-        rand_flip=False,
+        rand_flip=True,
         ncams=6,
         nsweeps=3,
         # model
         encoder_type='res101',
         use_radar=False,
+        use_radar_filters=False,
         use_lidar=False,
         do_metaradar=False,
         do_rgbcompress=True,
@@ -477,6 +478,7 @@ def main(
         grid_conf=grid_conf, bsz=B, nworkers=nworkers,
         parser_name='vizdata',
         shuffle=shuffle,
+        use_radar_filters=use_radar_filters,
         seqlen=1, # we do NOT load temporal sequence here, but that can work with this dataloader
         nsweeps=nsweeps,
         get_tids=True,
