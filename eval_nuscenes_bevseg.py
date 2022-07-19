@@ -273,7 +273,7 @@ def run_model(model, loss_fn, d, eff_B, eff_T, device='cuda:0', sw=None, is_trai
         # forward from rgbs up
         in_rad_occ_mem0 = None
         if model.module.use_radar:
-            if not model.module.do_metaradar:
+            if not model.module.use_metaradar:
                 in_rad_occ_mem0 = rad_occ_mem0[:, t]
             else:
                 in_rad_occ_mem0 = metarad_occ_mem0[:, t]
@@ -405,7 +405,7 @@ def main(
     encoder_type='res101',
     use_radar=False,
     use_lidar=False,
-    do_metaradar=False,
+    use_metaradar=False,
     do_rgbcompress=True,
     # cuda
     device='cuda:7',
@@ -465,7 +465,7 @@ def main(
 
     # set up model & seg loss
     seg_loss_fn = SimpleLoss(2.13).to(device)
-    model = Segnet(Z, Y, X, use_radar=use_radar, use_lidar=use_lidar, do_metaradar=do_metaradar, do_rgbcompress=do_rgbcompress, encoder_type=encoder_type)
+    model = Segnet(Z, Y, X, use_radar=use_radar, use_lidar=use_lidar, use_metaradar=use_metaradar, do_rgbcompress=do_rgbcompress, encoder_type=encoder_type)
     model = model.to(device)
     model = torch.nn.DataParallel(model, device_ids=device_ids)
     parameters = list(model.parameters())
