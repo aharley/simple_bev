@@ -122,58 +122,45 @@ def balanced_occ_loss(pred, occ, free):
 
     return balanced_loss
 
-def run_model(model, loss_fn, d, B_par, T_loop, device='cuda:0', sw=None, is_train=True):
+def run_model(model, loss_fn, d, device='cuda:0', sw=None, is_train=True):
     metrics = {}
+    total_loss = torch.tensor(0.0, requires_grad=True).to(device)
 
     imgs, rots, trans, intrins, pts0, extra0, pts, extra, lrtlist_velo, vislist, tidlist, scorelist, seg_bev_g, valid_bev_g, center_bev_g, offset_bev_g, radar_data, egopose = d
 
-    # sometimes the batch size is too large to fit into the gpus
-    # we factor the original batch size into B*T, where:
-    #     B is the batch size put onto the gpu for each forward/backward pass
-    #     T is the imaginary "timesteps" of forward/backward passes we need to run
-    B = B_par
-    T = T_loop
-    imgs = imgs.reshape(B, T, *imgs.size()[2:])
-    rots = rots.reshape(B, T, *rots.size()[2:])
-    trans = trans.reshape(B, T, *trans.size()[2:])
-    intrins = intrins.reshape(B, T, *intrins.size()[2:])
-    pts0 = pts0.reshape(B, T, *pts0.size()[2:])
-    extra0 = extra0.reshape(B, T, *extra0.size()[2:])
-    pts = pts.reshape(B, T, *pts.size()[2:])
-    extra = extra.reshape(B, T, *extra.size()[2:])
-    lrtlist_velo = lrtlist_velo.reshape(B, T, *lrtlist_velo.size()[2:])
-    vislist = vislist.reshape(B, T, *vislist.size()[2:])
-    tidlist = tidlist.reshape(B, T, *tidlist.size()[2:])
-    scorelist = scorelist.reshape(B, T, *scorelist.size()[2:])
-    seg_bev_g = seg_bev_g.reshape(B, T, *seg_bev_g.size()[2:])
-    valid_bev_g = valid_bev_g.reshape(B, T, *valid_bev_g.size()[2:])
-    center_bev_g = center_bev_g.reshape(B, T, *center_bev_g.size()[2:])
-    offset_bev_g = offset_bev_g.reshape(B, T, *offset_bev_g.size()[2:])
-    radar_data = radar_data.reshape(B, T, *radar_data.size()[2:])
-    egopose = egopose.reshape(B, T, *egopose.size()[2:])
-
     B0,T,S,C,H,W = imgs.shape
-    __p0 = lambda x: utils.basic.pack_seqdim(x, B0)
-    __u0 = lambda x: utils.basic.unpack_seqdim(x, B0)
-    
-    imgs = __p0(imgs)
-    rots = __p0(rots)
-    trans = __p0(trans)
-    intrins = __p0(intrins)
-    pts0 = __p0(pts0)
-    extra0 = __p0(extra0)
-    pts = __p0(pts)
-    extra = __p0(extra)
-    lrtlist_velo = __p0(lrtlist_velo)
-    vislist = __p0(vislist)
-    tidlist = __p0(tidlist)
-    scorelist = __p0(scorelist)
-    seg_bev_g = __p0(seg_bev_g)
-    valid_bev_g = __p0(valid_bev_g)
-    center_bev_g = __p0(center_bev_g)
-    offset_bev_g = __p0(offset_bev_g)
-    radar_data = __p0(radar_data)
+    assert(T==1)
 
+    # eliminate the time dimension
+
+    # print('pts0', pts0.shape)
+    # print('pts', pts.shape)
+    
+    imgs = imgs[:,0]
+    rots = rots[:,0]
+    trans = trans[:,0]
+    intrins = intrins[:,0]
+    pts0 = pts0[:,0]
+    extra0 = extra0[:,0]
+    pts = pts[:,0]
+    extra = extra[:,0]
+    lrtlist_velo = lrtlist_velo[:,0]
+    vislist = vislist[:,0]
+    tidlist = tidlist[:,0]
+    scorelist = scorelist[:,0]
+    seg_bev_g = seg_bev_g[:,0]
+    valid_bev_g = valid_bev_g[:,0]
+    center_bev_g = center_bev_g[:,0]
+    offset_bev_g = offset_bev_g[:,0]
+    radar_data = radar_data[:,0]
+    egopose = egopose[:,0]
+
+    # print('imgs', imgs.shape)
+    # print('rots', rots.shape)
+    # print('trans', trans.shape)
+    # print('intrins', intrins.shape)
+    # print('pts0', pts0.shape)
+    
     origin_T_velo0t = egopose.to(device) # B,T,4,4
 
     lrtlist_velo = lrtlist_velo.to(device)
@@ -231,150 +218,76 @@ def run_model(model, loss_fn, d, B_par, T_loop, device='cuda:0', sw=None, is_tra
     rad_occ_mem0 = vox_util.voxelize_xyz(rad_xyz_cam0, Z, Y, X, assert_cube=False)
     metarad_occ_mem0 = vox_util.voxelize_xyz_and_feats(rad_xyz_cam0, meta_rad, Z, Y, X, assert_cube=False)
 
-    if model.module.use_lidar:
-        rad_occ_mem0 = occ_mem0
-        
     if not (model.module.use_radar or model.module.use_lidar):
-        rad_occ_mem0 = None
+        in_occ_mem0 = None
+    elif model.module.use_lidar:
+        assert(model.module.use_radar==False) # either lidar or radar, not both
+        assert(model.module.use_metaradar==False) # either lidar or radar, not both
+        in_occ_mem0 = occ_mem0
+    elif model.module.use_radar and model.module.use_metaradar:
+        in_occ_mem0 = metarad_occ_mem0
+    elif model.module.use_radar:
+        in_occ_mem0 = rad_occ_mem0
+    elif model.module.use_metaradar:
+        assert(False) # cannot use_metaradar without use_radar
 
-    velo_T_cam0t = __u0(velo_T_cams[:,0])
-    cam0_T_velo0t = __u0(utils.geom.safe_inverse(__p0(velo_T_cam0t)))
-
-    origin_T_velo0t_ = __p0(origin_T_velo0t)
-    velo_T_cam0t_ = __p0(velo_T_cam0t)
-    cam0_T_velo0t_ = __p0(cam0_T_velo0t)
-
-    origin_T_cam0t = __u0(utils.basic.matmul2(origin_T_velo0t_, velo_T_cam0t_))
-    # this tells us how to get from the current timestep (I) to the last timestep (T)
-    camTt_T_camIt = utils.geom.get_camM_T_camXs(origin_T_cam0t, ind=T-1) # B0,T,4,4
-    camTt_T_camIt_ = __p0(camTt_T_camIt) # B0*T,4,4 = B,4,4
-    camT0_T_camXs = cam0_T_camXs
+    cam0_T_camXs = cam0_T_camXs
 
     lrtlist_cam0_g = lrtlist_cam0
 
-    rgb_camXs = __u0(rgb_camXs) # (B0, T, S, C, H, W)
-    pix_T_cams = __u0(pix_T_cams) # (B0, T, S, 4, 4)
-    camT0_T_camXs = __u0(camT0_T_camXs) # (B0, T, S, 4, 4)
-    feat_bev_e = []
-    seg_bev_e = []
-    center_bev_e = []
-    offset_bev_e = []
-    seg_bev_gt = __u0(seg_bev_g)
-    center_bev_gt = __u0(center_bev_g)
-    offset_bev_gt = __u0(offset_bev_g)
-    valid_bev_gt = __u0(valid_bev_g)
-    
-    if model.module.use_radar or model.module.use_lidar:
-        rad_occ_mem0 = __u0(rad_occ_mem0)
-        metarad_occ_mem0 = __u0(metarad_occ_mem0)
+    _, feat_bev_e, seg_bev_e, center_bev_e, offset_bev_e = model(
+            rgb_camXs=rgb_camXs,
+            pix_T_cams=pix_T_cams,
+            cam0_T_camXs=cam0_T_camXs,
+            vox_util=vox_util,
+            rad_occ_mem0=in_occ_mem0)
 
-    # run all timesteps
-    offset_losses = []
-    offset_uncertainty_losses = []
-    ce_losses = []
-    ce_uncertainty_losses = []
-    center_losses = []
-    center_uncertainty_losses = []
-    total_losses = []
-    ious = []
-    ious_all = []
-    for t in range(T):
-        # forward from rgbs up
-        in_rad_occ_mem0 = None
-        if model.module.use_radar:
-            if not model.module.do_metaradar:
-                in_rad_occ_mem0 = rad_occ_mem0[:, t]
-            else:
-                in_rad_occ_mem0 = metarad_occ_mem0[:, t]
-        elif model.module.use_lidar:
-            in_rad_occ_mem0 = rad_occ_mem0[:, t]
-        _, feat_bev_et, seg_bev_et, center_bev_et, offset_bev_et = model(
-                rgb_camXs=rgb_camXs[:, t],
-                pix_T_cams=pix_T_cams[:, t],
-                cam0_T_camXs=camT0_T_camXs[:, t],
-                vox_util=vox_util,
-                rad_occ_mem0=in_rad_occ_mem0)
-        feat_bev_e.append(feat_bev_et.detach())
-        seg_bev_e.append(seg_bev_et.detach().cpu())
-        center_bev_e.append(center_bev_et.detach().cpu())
-        offset_bev_e.append(offset_bev_et.detach().cpu())
+    ce_loss = loss_fn(seg_bev_e, seg_bev_g, valid_bev_g)
+    center_loss = balanced_mse_loss(center_bev_e, center_bev_g)
+    offset_loss = torch.abs(offset_bev_e-offset_bev_g).sum(dim=1, keepdim=True)
+    offset_loss = utils.basic.reduce_masked_mean(offset_loss, seg_bev_g*valid_bev_g)
 
-        # backward (to save memory)
-        total_loss_t = torch.tensor(0.0, requires_grad=True).to(device)
+    ce_factor = 1 / torch.exp(model.module.ce_weight)
+    ce_loss = 10.0 * ce_loss * ce_factor
+    ce_uncertainty_loss = 0.5 * model.module.ce_weight
 
-        offset_loss_t = torch.abs(offset_bev_et-offset_bev_gt[:,t]).sum(dim=1, keepdim=True)
-        offset_loss_t = utils.basic.reduce_masked_mean(offset_loss_t, seg_bev_gt[:,t]*valid_bev_gt[:,t])
-        ce_loss_t = loss_fn(seg_bev_et, seg_bev_gt[:,t], valid_bev_gt[:,t])
-        center_loss_t = balanced_mse_loss(center_bev_et, center_bev_gt[:,t])
+    center_factor = 1 / (2*torch.exp(model.module.center_weight))
+    center_loss = center_factor * center_loss
+    center_uncertainty_loss = 0.5 * model.module.center_weight
 
-        ce_factor = 1 / torch.exp(model.module.ce_weight)
-        ce_loss_t = 10.0 * ce_loss_t * ce_factor
-        ce_uncertainty_loss_t = 0.5 * model.module.ce_weight
+    offset_factor = 1 / (2*torch.exp(model.module.offset_weight))
+    offset_loss = offset_factor * offset_loss
+    offset_uncertainty_loss = 0.5 * model.module.offset_weight
 
-        center_factor = 1 / (2*torch.exp(model.module.center_weight))
-        center_loss_t = center_factor * center_loss_t
-        center_uncertainty_loss_t = 0.5 * model.module.center_weight
+    total_loss += ce_loss
+    total_loss += center_loss
+    total_loss += offset_loss
+    total_loss += ce_uncertainty_loss
+    total_loss += center_uncertainty_loss
+    total_loss += offset_uncertainty_loss
 
-        offset_factor = 1 / (2*torch.exp(model.module.offset_weight))
-        offset_loss_t = offset_factor * offset_loss_t
-        offset_uncertainty_loss_t = 0.5 * model.module.offset_weight
+    seg_bev_e_round = torch.sigmoid(seg_bev_e).round()
+    intersection = (seg_bev_e_round*seg_bev_g*valid_bev_g).sum(dim=[1,2,3])
+    union = ((seg_bev_e_round+seg_bev_g)*valid_bev_g).clamp(0,1).sum(dim=[1,2,3])
+    iou = (intersection/(1e-4 + union)).mean()
 
-        offset_losses.append(offset_loss_t.item())
-        ce_losses.append(ce_loss_t.item())
-        center_losses.append(center_loss_t.item())
-        ce_uncertainty_losses.append(ce_uncertainty_loss_t.item())
-        center_uncertainty_losses.append(center_uncertainty_loss_t.item())
-        offset_uncertainty_losses.append(offset_uncertainty_loss_t.item())
-
-        total_loss_t += ce_uncertainty_loss_t
-        total_loss_t += center_uncertainty_loss_t
-        total_loss_t += offset_uncertainty_loss_t
-        total_loss_t += ce_loss_t
-        total_loss_t += center_loss_t
-        total_loss_t += offset_loss_t
-        total_losses.append(total_loss_t.item())
-
-        if is_train:
-            total_loss_t.backward()
-        
-        seg_bev_et_round = torch.sigmoid(seg_bev_et).round()
-        intersection = (seg_bev_et_round*seg_bev_gt[:,t]*valid_bev_gt[:,t]).sum(dim=[1,2,3])
-        union = ((seg_bev_et_round+seg_bev_gt[:,t])*valid_bev_gt[:,t]).clamp(0,1).sum(dim=[1,2,3])
-        iou = intersection/(1e-4 + union)
-        ious.append(iou.mean().item())
-        ious_all.append(iou)
-
-    feat_bev_e = torch.cat(feat_bev_e, dim=0).cpu()
-    seg_bev_e = torch.cat(seg_bev_e, dim=0)
-    center_bev_e = torch.cat(center_bev_e, dim=0)
-    offset_bev_e = torch.cat(offset_bev_e, dim=0)
-    ious_all = torch.cat(ious_all, dim=0)
-
-    occ_mem0_g = occ_mem0
-    feat_bev_et = __u0(feat_bev_e)
-    seg_bev_et = __u0(seg_bev_e)
-    center_bev_et = __u0(center_bev_e)
-    offset_bev_et = __u0(offset_bev_e)
-
-    metrics['offset_loss'] = np.mean(offset_losses)
-    metrics['ce_loss'] = np.mean(ce_losses)
-    metrics['center_loss'] = np.mean(center_losses)
+    metrics['ce_loss'] = ce_loss.item()
+    metrics['center_loss'] = center_loss.item()
+    metrics['offset_loss'] = offset_loss.item()
     metrics['ce_weight'] = model.module.ce_weight.item()
     metrics['center_weight'] = model.module.center_weight.item()
     metrics['offset_weight'] = model.module.offset_weight.item()
-    total_loss = np.mean(total_losses)
-    metrics['iou'] = np.mean(ious)
+    metrics['iou'] = iou.item()
 
     if sw is not None and sw.save_this:
         if model.module.use_radar or model.module.use_lidar:
-            rad_occ_mem0 = __p0(rad_occ_mem0)
             sw.summ_occ('0_inputs/rad_occ_mem0', rad_occ_mem0)
         sw.summ_occ('0_inputs/occ_mem0', occ_mem0)
-        sw.summ_rgb('0_inputs/rgb_camXs', torch.cat(rgb_camXs[0:1,0].unbind(1), dim=-1))
+        sw.summ_rgb('0_inputs/rgb_camXs', torch.cat(rgb_camXs[0:1].unbind(1), dim=-1))
 
         sw.summ_oned('2_outputs/seg_bev_g', seg_bev_g * (0.5+valid_bev_g*0.5), norm=False)
         sw.summ_oned('2_outputs/valid_bev_g', valid_bev_g, norm=False)
-        sw.summ_oned('2_outputs/seg_bev_e', torch.sigmoid(seg_bev_e).round(), norm=False, frame_id=iou[0])
+        sw.summ_oned('2_outputs/seg_bev_e', torch.sigmoid(seg_bev_e).round(), norm=False, frame_id=iou.item())
         sw.summ_oned('2_outputs/seg_bev_e_soft', torch.sigmoid(seg_bev_e), norm=False)
 
         sw.summ_oned('2_outputs/center_bev_g', center_bev_g, norm=False)
@@ -396,7 +309,6 @@ def main(
         val_freq=100,
         save_freq=1000,
         batch_size=40,
-        batch_parallel=8,
         lr=3e-4,
         use_scheduler=False,
         weight_decay=1e-7,
@@ -421,22 +333,23 @@ def main(
         use_radar=False,
         use_radar_filters=False,
         use_lidar=False,
-        do_metaradar=False,
+        use_metaradar=False,
         do_rgbcompress=True,
         # cuda
         device='cuda:0',
         device_ids=[0,1,2,3],
     ):
 
-    print('batch_size', batch_size)
-    print('B_par', batch_parallel)
     B = batch_size
-    B_par = batch_parallel
-    T_loop = B // B_par
-    assert (B == B_par * T_loop)
+    assert(B % len(device_ids) == 0) # batch size must be divisible by number of gpus
+    if grad_acc > 1:
+        print('effective batch size:', B*grad_acc)
 
     # autogen a name
-    model_name = "%02d" % B
+    model_name = "%d" % B
+    if grad_acc > 1:
+        model_name += "x%d" % grad_acc
+        
     lrn = "%.1e" % lr # e.g., 5.0e-04
     lrn = lrn[0] + lrn[3:5] + lrn[-1] # e.g., 5e-4
     model_name += "_%s" % lrn
@@ -488,7 +401,7 @@ def main(
 
     # set up model & seg loss
     seg_loss_fn = SimpleLoss(2.13).to(device) # value from lift-splat
-    model = Segnet(Z, Y, X, use_radar=use_radar, use_lidar=use_lidar, do_metaradar=do_metaradar, do_rgbcompress=do_rgbcompress, encoder_type=encoder_type, rand_flip=rand_flip)
+    model = Segnet(Z, Y, X, use_radar=use_radar, use_lidar=use_lidar, use_metaradar=use_metaradar, do_rgbcompress=do_rgbcompress, encoder_type=encoder_type, rand_flip=rand_flip)
     model = model.to(device)
     model = torch.nn.DataParallel(model, device_ids=device_ids)
     parameters = list(model.parameters())
@@ -533,42 +446,52 @@ def main(
 
     # training loop
     while global_step < max_iters:
-        # read sample
-        read_start_time = time.time()
         global_step += 1
 
-        sw_t = utils.improc.Summ_writer(
-            writer=writer_t,
-            global_step=global_step,
-            log_freq=log_freq,
-            fps=2,
-            scalar_freq=int(log_freq/2),
-            just_gif=True)
-
-        try:
-            sample = next(train_iterloader)
-        except StopIteration:
-            train_iterloader = iter(train_dataloader)
-            sample = next(train_iterloader)
-
-        read_time = time.time()-read_start_time
-
-        # run training iteration
         iter_start_time = time.time()
-            
-        total_loss, metrics = run_model(model, seg_loss_fn, sample, B_par, T_loop, device, sw_t, is_train=True)
+        iter_read_time = 0.0
         
-        if global_step % grad_acc == 0:
-            torch.nn.utils.clip_grad_norm_(parameters, 5.0)
-            optimizer.step()
-            if use_scheduler:
-                scheduler.step()
-            optimizer.zero_grad()
+        for internal_step in range(grad_acc):
+            # read sample
+            read_start_time = time.time()
+
+            if internal_step==grad_acc-1:
+                sw_t = utils.improc.Summ_writer(
+                    writer=writer_t,
+                    global_step=global_step,
+                    log_freq=log_freq,
+                    fps=2,
+                    scalar_freq=int(log_freq/2),
+                    just_gif=True)
+            else:
+                sw_t = None
+
+            try:
+                sample = next(train_iterloader)
+            except StopIteration:
+                train_iterloader = iter(train_dataloader)
+                sample = next(train_iterloader)
+
+            read_time = time.time()-read_start_time
+            iter_read_time += read_time
+
+            # run training iteration
+
+            total_loss, metrics = run_model(model, seg_loss_fn, sample, device, sw_t, is_train=True)
+
+            total_loss.backward()
+        
+        # if global_step % grad_acc == 0:
+        torch.nn.utils.clip_grad_norm_(parameters, 5.0)
+        optimizer.step()
+        if use_scheduler:
+            scheduler.step()
+        optimizer.zero_grad()
 
         # update logging pools
-        loss_pool_t.update([total_loss])
+        loss_pool_t.update([total_loss.item()])
         sw_t.summ_scalar('pooled/total_loss', loss_pool_t.mean())
-        sw_t.summ_scalar('stats/total_loss', total_loss)
+        sw_t.summ_scalar('stats/total_loss', total_loss.item())
 
         iou_pool_t.update([metrics['iou']])
         sw_t.summ_scalar('pooled/iou', iou_pool_t.mean())
@@ -614,13 +537,14 @@ def main(
             except StopIteration:
                 val_iterloader = iter(val_dataloader)
                 sample = next(val_iterloader)
+                
             with torch.no_grad():
-                total_loss, metrics = run_model(model, seg_loss_fn, sample, B_par, T_loop, device, sw_v, is_train=False)
+                total_loss, metrics = run_model(model, seg_loss_fn, sample, device, sw_v, is_train=False)
 
             # update val running pools
-            sw_v.summ_scalar('stats/total_loss', total_loss)
-            loss_pool_v.update([total_loss])
+            loss_pool_v.update([total_loss.item()])
             sw_v.summ_scalar('pooled/total_loss', loss_pool_v.mean())
+            sw_v.summ_scalar('stats/total_loss', total_loss.item())
 
             iou_pool_v.update([metrics['iou']])
             sw_v.summ_scalar('pooled/iou', iou_pool_v.mean())
@@ -651,11 +575,11 @@ def main(
 
         if do_val:
             print('%s; step %06d/%d; rtime %.2f; itime %.2f; loss %.5f; iou_t %.1f; iou_v %.1f' % (
-                model_name, global_step, max_iters, read_time, iter_time,
+                model_name, global_step, max_iters, iter_read_time, iter_time,
                 total_loss.item(), 100*iou_pool_t.mean(), 100*iou_pool_v.mean()))
         else:
             print('%s; step %06d/%d; rtime %.2f; itime %.2f; loss %.5f; iou_t %.1f' % (
-                model_name, global_step, max_iters, read_time, iter_time,
+                model_name, global_step, max_iters, iter_read_time, iter_time,
                 total_loss.item(), 100*iou_pool_t.mean()))
             
     writer_t.close()
