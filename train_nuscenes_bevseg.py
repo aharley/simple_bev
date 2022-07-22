@@ -77,51 +77,6 @@ def balanced_mse_loss(pred, gt, valid=None):
     loss = (pos_loss + neg_loss)*0.5
     return loss
     
-def balanced_ce_loss(out, target, valid):
-    B, N, H, W = out.shape
-    total_loss = torch.tensor(0.0).to(out.device)
-    normalizer = 0
-    NN = valid.shape[1]
-    assert(NN==1)
-    for n in range(N):
-        out_ = out[:,n]
-        tar_ = target[:,n]
-        val_ = valid[:,0]
-
-        pos = tar_.gt(0.99).float()
-        neg = tar_.lt(0.95).float()
-        label = pos*2.0 - 1.0
-        a = -label * out_
-        b = F.relu(a)
-        loss = b + torch.log(torch.exp(-b)+torch.exp(a-b))
-        if torch.sum(pos*val_) > 0:
-            pos_loss = utils.basic.reduce_masked_mean(loss, pos*val_)
-            neg_loss = utils.basic.reduce_masked_mean(loss, neg*val_)
-            total_loss += (pos_loss + neg_loss)*0.5
-            normalizer += 1
-        else:
-            total_loss += loss.mean()
-            normalizer += 1
-    return total_loss / normalizer
-    
-def balanced_occ_loss(pred, occ, free):
-    pos = occ.clone()
-    neg = free.clone()
-
-    label = pos*2.0 - 1.0
-    a = -label * pred
-    b = F.relu(a)
-    loss = b + torch.log(torch.exp(-b)+torch.exp(a-b))
-
-    mask_ = (pos+neg>0.0).float()
-
-    pos_loss = utils.basic.reduce_masked_mean(loss, pos)
-    neg_loss = utils.basic.reduce_masked_mean(loss, neg)
-
-    balanced_loss = pos_loss + neg_loss
-
-    return balanced_loss
-
 def run_model(model, loss_fn, d, device='cuda:0', sw=None, is_train=True):
     metrics = {}
     total_loss = torch.tensor(0.0, requires_grad=True).to(device)
