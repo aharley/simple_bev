@@ -263,17 +263,17 @@ def main(
         do_val=True,
         val_freq=100,
         save_freq=1000,
-        batch_size=40,
+        batch_size=8,
+        grad_acc=5,
         lr=3e-4,
         use_scheduler=False,
         weight_decay=1e-7,
-        grad_acc=1,
         nworkers=12,
         # data/log/save/load directories
         data_dir='/home/scratch/zhaoyuaf/nuscenes/',
         log_dir='logs_nuscenes_bevseg',
         ckpt_dir='checkpoints/',
-        keep_latest=3,
+        keep_latest=1,
         init_dir='',
         ignore_load=None,
         load_step=False,
@@ -308,6 +308,8 @@ def main(
     lrn = "%.1e" % lr # e.g., 5.0e-04
     lrn = lrn[0] + lrn[3:5] + lrn[-1] # e.g., 5e-4
     model_name += "_%s" % lrn
+    if use_scheduler:
+        model_name += "s"
     model_name += "_%s" % exp_name 
     import datetime
     model_date = datetime.datetime.now().strftime('%H:%M:%S')
@@ -361,7 +363,7 @@ def main(
     model = torch.nn.DataParallel(model, device_ids=device_ids)
     parameters = list(model.parameters())
     if use_scheduler:
-        optimizer, scheduler = fetch_optimizer(lr, 0.0001, 1e-8, max_iters, model.parameters())
+        optimizer, scheduler = fetch_optimizer(lr, weight_decay, 1e-8, max_iters, model.parameters())
     else:
         optimizer = torch.optim.Adam(parameters, lr=lr, weight_decay=weight_decay)
     
