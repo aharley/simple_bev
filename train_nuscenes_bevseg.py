@@ -3,25 +3,18 @@ import time
 import argparse
 import numpy as np
 import saverloader
-
 from fire import Fire
-
 from nets.segnet import Segnet
-
 import utils.misc
 import utils.improc
 import utils.vox
 import random
-
 from nuscenesdataset import compile_data
-
 import torch
 torch.multiprocessing.set_sharing_strategy('file_system')
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
-
 from tensorboardX import SummaryWriter
-
 import torch.nn.functional as F
 
 random.seed(125)
@@ -77,7 +70,7 @@ def balanced_mse_loss(pred, gt, valid=None):
     loss = (pos_loss + neg_loss)*0.5
     return loss
     
-def run_model(model, loss_fn, d, device='cuda:0', sw=None, is_train=True):
+def run_model(model, loss_fn, d, device='cuda:0', sw=None):
     metrics = {}
     total_loss = torch.tensor(0.0, requires_grad=True).to(device)
 
@@ -87,10 +80,6 @@ def run_model(model, loss_fn, d, device='cuda:0', sw=None, is_train=True):
     assert(T==1)
 
     # eliminate the time dimension
-
-    # print('pts0', pts0.shape)
-    # print('pts', pts.shape)
-    
     imgs = imgs[:,0]
     rots = rots[:,0]
     trans = trans[:,0]
@@ -109,15 +98,8 @@ def run_model(model, loss_fn, d, device='cuda:0', sw=None, is_train=True):
     offset_bev_g = offset_bev_g[:,0]
     radar_data = radar_data[:,0]
     egopose = egopose[:,0]
-
-    # print('imgs', imgs.shape)
-    # print('rots', rots.shape)
-    # print('trans', trans.shape)
-    # print('intrins', intrins.shape)
-    # print('pts0', pts0.shape)
     
     origin_T_velo0t = egopose.to(device) # B,T,4,4
-
     lrtlist_velo = lrtlist_velo.to(device)
     scorelist = scorelist.to(device)
 
@@ -270,7 +252,7 @@ def main(
         weight_decay=1e-7,
         nworkers=12,
         # data/log/save/load directories
-        data_dir='/home/scratch/zhaoyuaf/nuscenes/',
+        data_dir='../nuscenes/',
         log_dir='logs_nuscenes_bevseg',
         ckpt_dir='checkpoints/',
         keep_latest=1,
@@ -304,7 +286,6 @@ def main(
     model_name = "%d" % B
     if grad_acc > 1:
         model_name += "x%d" % grad_acc
-        
     lrn = "%.1e" % lr # e.g., 5.0e-04
     lrn = lrn[0] + lrn[3:5] + lrn[-1] # e.g., 5e-4
     model_name += "_%s" % lrn
@@ -316,14 +297,14 @@ def main(
     model_name = model_name + '_' + model_date
     print('model_name', model_name)
 
-    # set up tb writers
+    # set up ckpt and logging 
     ckpt_dir = os.path.join(ckpt_dir, model_name)
     writer_t = SummaryWriter(os.path.join(log_dir, model_name + '/t'), max_queue=10, flush_secs=60)
     if do_val:
         writer_v = SummaryWriter(os.path.join(log_dir, model_name + '/v'), max_queue=10, flush_secs=60)
 
     # set up dataloaders
-    final_dim = (224 * resolution_scale, 400 * resolution_scale)
+    final_dim = (int(224 * resolution_scale), int(400 * resolution_scale))
     resize_lim = [0.8,1.2]
     crop_offset = int(final_dim[0]*(1-resize_lim[0]))
     xbound = [-50.0, 50.0, 0.5]
@@ -341,7 +322,7 @@ def main(
         'H': 900, 'W': 1600,
         'cams': ['CAM_FRONT_LEFT', 'CAM_FRONT', 'CAM_FRONT_RIGHT',
                  'CAM_BACK_LEFT', 'CAM_BACK', 'CAM_BACK_RIGHT'],
-        'Ncams': ncams,
+        'ncams': ncams,
     }
     train_dataloader, val_dataloader = compile_data(
         dset, data_dir, data_aug_conf=data_aug_conf,
@@ -349,7 +330,7 @@ def main(
         parser_name='vizdata',
         shuffle=shuffle,
         use_radar_filters=use_radar_filters,
-        seqlen=1, # we do NOT load temporal sequence here, but that can work with this dataloader
+        seqlen=1, # we do not load a temporal sequence here, but that can work with this dataloader
         nsweeps=nsweeps,
         get_tids=True,
     )
@@ -366,7 +347,6 @@ def main(
         optimizer, scheduler = fetch_optimizer(lr, weight_decay, 1e-8, max_iters, model.parameters())
     else:
         optimizer = torch.optim.Adam(parameters, lr=lr, weight_decay=weight_decay)
-    
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print('total_params', total_params)
 
@@ -434,7 +414,7 @@ def main(
 
             # run training iteration
 
-            total_loss, metrics = run_model(model, seg_loss_fn, sample, device, sw_t, is_train=True)
+            total_loss, metrics = run_model(model, seg_loss_fn, sample, device, sw_t)
 
             total_loss.backward()
         
@@ -496,7 +476,7 @@ def main(
                 sample = next(val_iterloader)
                 
             with torch.no_grad():
-                total_loss, metrics = run_model(model, seg_loss_fn, sample, device, sw_v, is_train=False)
+                total_loss, metrics = run_model(model, seg_loss_fn, sample, device, sw_v)
 
             # update val running pools
             loss_pool_v.update([total_loss.item()])
