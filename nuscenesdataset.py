@@ -1146,8 +1146,8 @@ class NuscData(torch.utils.data.Dataset):
         return lrtlist, boxlist, vislist, tidlist
 
     def choose_cams(self):
-        if self.is_train and self.data_aug_conf['Ncams'] < len(self.data_aug_conf['cams']):
-            cams = np.random.choice(self.data_aug_conf['cams'], self.data_aug_conf['Ncams'],
+        if self.is_train and self.data_aug_conf['ncams'] < len(self.data_aug_conf['cams']):
+            cams = np.random.choice(self.data_aug_conf['cams'], self.data_aug_conf['ncams'],
                                     replace=False)
         else:
             cams = self.data_aug_conf['cams']
@@ -1381,11 +1381,8 @@ class VizData(NuscData):
     
     def __getitem__(self, index):
 
-
         cams = self.choose_cams()
-        #if self.seqlen==1:
-        #    return self.get_single_item(self.indices[index][0], cams)
-
+        
         if self.is_train:
             # randomly sample the ref cam
             cam_id = np.random.randint(1, len(cams))
@@ -1393,6 +1390,9 @@ class VizData(NuscData):
             cam_id = self.cam_id
         # print('seq index', index)
         # print('choosing refcam', cam_id)
+
+        # if self.seqlen==1:
+        #    return self.get_single_item(self.indices[index][0], cams, cam_id=cam_id)
         
         all_imgs = []
         all_rots = []
