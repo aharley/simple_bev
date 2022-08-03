@@ -288,9 +288,13 @@ class Encoder_eff(nn.Module):
 
 class Segnet(nn.Module):
     def __init__(self, Z, Y, X, 
-            use_radar=False, use_lidar=False, use_metaradar=False, do_rgbcompress=True,
-            rand_flip=False,
-            latent_dim=128, encoder_type="res101"):
+                 use_radar=False,
+                 use_lidar=False,
+                 use_metaradar=False,
+                 do_rgbcompress=True,
+                 rand_flip=False,
+                 latent_dim=128,
+                 encoder_type="res101"):
         super(Segnet, self).__init__()
         assert (encoder_type in ["res101", "res50", "effb0", "effb4"])
 
