@@ -582,7 +582,7 @@ def get_local_map(nmap, center, stretch, layer_names, line_names):
 
 
 class NuscData(torch.utils.data.Dataset):
-    def __init__(self, nusc, is_train, data_aug_conf, grid_conf, nsweeps=1, include_extra=False, drop_rings=False, seqlen=1, cam_id=1, include_rgbs=True, get_tids=False, temporal_aug=False, use_radar_filters=False):
+    def __init__(self, nusc, is_train, data_aug_conf, grid_conf, nsweeps=1, include_extra=False, drop_rings=False, seqlen=1, refcam_id=1, include_rgbs=True, get_tids=False, temporal_aug=False, use_radar_filters=False, do_shuffle_cams=True):
         self.nusc = nusc
         self.is_train = is_train
         self.data_aug_conf = data_aug_conf
@@ -592,9 +592,10 @@ class NuscData(torch.utils.data.Dataset):
         self.include_extra = include_extra
         self.include_rgbs = include_rgbs
         self.use_radar_filters = use_radar_filters
+        self.do_shuffle_cams = do_shuffle_cams
 
         self.seqlen = seqlen
-        self.cam_id = cam_id
+        self.refcam_id = refcam_id
         
         self.scenes = self.get_scenes()
         # print('applying hack to use just first scene')
@@ -1191,7 +1192,7 @@ class VizData(NuscData):
             assert_cube=False)
         self.Z, self.Y, self.X = Z, Y, X
 
-    def get_single_item(self, index, cams, cam_id=None):
+    def get_single_item(self, index, cams, refcam_id=None):
         # print('index %d; cam_id' % index, cam_id)
         rec = self.ixes[index]
         
@@ -1201,12 +1202,12 @@ class VizData(NuscData):
         binimg, egopose = self.get_binimg(rec)
         # print('egopose', egopose)
 
-        if cam_id is None:
+        if refcam_id is None:
             if self.is_train:
                 # randomly sample the ref cam
-                cam_id = np.random.randint(1, len(cams))
+                refcam_id = np.random.randint(1, len(cams))
             else:
-                cam_id = self.cam_id
+                refcam_id = self.refcam_id
             
         # print('imgs', imgs.shape)
         # print('rots', rots.shape)
@@ -1216,18 +1217,18 @@ class VizData(NuscData):
         trans_ = trans.clone()
         intrins_ = intrins.clone()
 
-        # move the target cam_id to the zeroth slot
-        imgs[0] = imgs_[cam_id].clone()
-        imgs[cam_id] = imgs_[0].clone()
+        # move the target refcam_id to the zeroth slot
+        imgs[0] = imgs_[refcam_id].clone()
+        imgs[refcam_id] = imgs_[0].clone()
 
-        rots[0] = rots_[cam_id].clone()
-        rots[cam_id] = rots_[0].clone()
+        rots[0] = rots_[refcam_id].clone()
+        rots[refcam_id] = rots_[0].clone()
 
-        trans[0] = trans_[cam_id].clone()
-        trans[cam_id] = trans_[0].clone()
+        trans[0] = trans_[refcam_id].clone()
+        trans[refcam_id] = trans_[0].clone()
 
-        intrins[0] = intrins_[cam_id].clone()
-        intrins[cam_id] = intrins_[0].clone()
+        intrins[0] = intrins_[refcam_id].clone()
+        intrins[refcam_id] = intrins_[0].clone()
 
             
             
@@ -1383,11 +1384,11 @@ class VizData(NuscData):
 
         cams = self.choose_cams()
         
-        if self.is_train:
+        if self.is_train and self.do_shuffle_cams:
             # randomly sample the ref cam
-            cam_id = np.random.randint(1, len(cams))
+            refcam_id = np.random.randint(1, len(cams))
         else:
-            cam_id = self.cam_id
+            refcam_id = self.refcam_id
         # print('seq index', index)
         # print('choosing refcam', cam_id)
 
@@ -1414,7 +1415,7 @@ class VizData(NuscData):
         all_egopose = []
         for index_t in self.indices[index]:
             # print('grabbing index %d' % index_t)
-            imgs, rots, trans, intrins, lidar0_data, lidar0_extra, lidar_data, lidar_extra, lrtlist, vislist, tidlist, scorelist, seg_bev, valid_bev, center_bev, offset_bev, size_bev, ry_bev, ycoord_bev, radar_data, egopose = self.get_single_item(index_t, cams, cam_id=cam_id)
+            imgs, rots, trans, intrins, lidar0_data, lidar0_extra, lidar_data, lidar_extra, lrtlist, vislist, tidlist, scorelist, seg_bev, valid_bev, center_bev, offset_bev, size_bev, ry_bev, ycoord_bev, radar_data, egopose = self.get_single_item(index_t, cams, refcam_id=refcam_id)
 
             # print('rots', rots)
             
@@ -1509,8 +1510,8 @@ def worker_rnd_init(x):
 
 
 def compile_data(version, dataroot, data_aug_conf, grid_conf, bsz,
-                 nworkers, parser_name, shuffle=True, nsweeps=1, nworkers_val=1, include_extra=True, drop_rings=False, seqlen=1, cam_id=1, get_tids=False,
-                 include_rgbs=True, temporal_aug=False, use_radar_filters=False):
+                 nworkers, parser_name, shuffle=True, nsweeps=1, nworkers_val=1, include_extra=True, drop_rings=False, seqlen=1, refcam_id=1, get_tids=False,
+                 include_rgbs=True, temporal_aug=False, use_radar_filters=False, do_shuffle_cams=True):
     print('loading nuscenes...')
     nusc = NuScenes(version='v1.0-{}'.format(version),
                     dataroot=os.path.join(dataroot, version),
@@ -1528,11 +1529,12 @@ def compile_data(version, dataroot, data_aug_conf, grid_conf, bsz,
                        include_extra=include_extra,
                        drop_rings=drop_rings,
                        seqlen=seqlen,
-                       cam_id=cam_id,
+                       refcam_id=refcam_id,
                        include_rgbs=include_rgbs,
                        get_tids=get_tids,
                        temporal_aug=temporal_aug,
-                       use_radar_filters=use_radar_filters)
+                       use_radar_filters=use_radar_filters,
+                       do_shuffle_cams=do_shuffle_cams)
     valdata = parser(nusc,
                      is_train=False,
                      data_aug_conf=data_aug_conf,
@@ -1540,11 +1542,12 @@ def compile_data(version, dataroot, data_aug_conf, grid_conf, bsz,
                      grid_conf=grid_conf,
                      include_extra=include_extra,
                      seqlen=seqlen,
-                     cam_id=cam_id,
+                     refcam_id=refcam_id,
                      include_rgbs=include_rgbs,
                      get_tids=get_tids,
                      temporal_aug=False,
-                     use_radar_filters=use_radar_filters)
+                     use_radar_filters=use_radar_filters,
+                     do_shuffle_cams=False)
 
     trainloader = torch.utils.data.DataLoader(traindata, batch_size=bsz,
                                               shuffle=shuffle,
