@@ -272,8 +272,8 @@ def main(
         use_lidar=False,
         use_metaradar=False,
         do_rgbcompress=True,
+        do_shuffle_cams=True,
         # cuda
-        device='cuda:0',
         device_ids=[0,1,2,3],
     ):
 
@@ -281,6 +281,7 @@ def main(
     assert(B % len(device_ids) == 0) # batch size must be divisible by number of gpus
     if grad_acc > 1:
         print('effective batch size:', B*grad_acc)
+    device = 'cuda:%d' % device_ids[0]
 
     # autogen a name
     model_name = "%d" % B
@@ -332,6 +333,7 @@ def main(
         use_radar_filters=use_radar_filters,
         seqlen=1, # we do not load a temporal sequence here, but that can work with this dataloader
         nsweeps=nsweeps,
+        do_shuffle_cams=do_shuffle_cams,
         get_tids=True,
     )
     train_iterloader = iter(train_dataloader)

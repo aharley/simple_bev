@@ -294,15 +294,16 @@ def main(
         use_metaradar=False,
         do_rgbcompress=True,
         # cuda
-        device='cuda:7',
-        device_ids=[7,4,5,6],
+        device_ids=[4,5,6,7],
 ):
-
     B = batch_size
     assert(B % len(device_ids) == 0) # batch size must be divisible by number of gpus
+
+    device = 'cuda:%d' % device_ids[0]
     
     ## autogen a name
-    model_name = "%d" % B
+    model_name = "%s" % init_dir.split('/')[-1]
+    model_name += "_%d" % B
     model_name += "_%s" % exp_name
     import datetime
     model_date = datetime.datetime.now().strftime('%H:%M:%S')
