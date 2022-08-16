@@ -1553,10 +1553,12 @@ def compile_data(version, dataroot, data_aug_conf, grid_conf, bsz,
                                               shuffle=shuffle,
                                               num_workers=nworkers,
                                               drop_last=True,
-                                              worker_init_fn=worker_rnd_init)
+                                              worker_init_fn=worker_rnd_init,
+                                              pin_memory=False)
     valloader = torch.utils.data.DataLoader(valdata, batch_size=bsz,
                                             shuffle=shuffle,
                                             num_workers=nworkers_val,
-                                            drop_last=True)
+                                            drop_last=True,
+                                            pin_memory=False)
     print('data ready')
     return trainloader, valloader
