@@ -11,6 +11,7 @@ import utils.vox
 import random
 from nuscenesdataset import compile_data
 import torch
+import torch.multiprocessing
 torch.multiprocessing.set_sharing_strategy('file_system')
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
@@ -261,8 +262,9 @@ def main(
         load_step=False,
         load_optimizer=False,
         # data
-        resolution_scale=2,
+        res_scale=2,
         rand_flip=True,
+        rand_crop_and_resize=True,
         ncams=6,
         nsweeps=3,
         # model
@@ -305,9 +307,16 @@ def main(
         writer_v = SummaryWriter(os.path.join(log_dir, model_name + '/v'), max_queue=10, flush_secs=60)
 
     # set up dataloaders
-    final_dim = (int(224 * resolution_scale), int(400 * resolution_scale))
-    resize_lim = [0.8,1.2]
-    crop_offset = int(final_dim[0]*(1-resize_lim[0]))
+    final_dim = (int(224 * res_scale), int(400 * res_scale))
+    print('resolution:', final_dim)
+
+    if rand_crop_and_resize:
+        resize_lim = [0.8,1.2]
+        crop_offset = int(final_dim[0]*(1-resize_lim[0]))
+    else:
+        resize_lim = [1.0,1.0]
+        crop_offset = 0
+    
     xbound = [-50.0, 50.0, 0.5]
     ybound = [-50.0, 50.0, 0.5]
     zbound = [-5.0, 5.0, 10.0]
