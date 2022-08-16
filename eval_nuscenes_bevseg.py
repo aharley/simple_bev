@@ -283,7 +283,7 @@ def main(
         init_dir='checkpoints/rgb_model',
         ignore_load=None,
         # data
-        resolution_scale=2,
+        res_scale=2,
         ncams=6,
         nsweeps=3,
         # model
@@ -314,7 +314,8 @@ def main(
     writer_ev = SummaryWriter(os.path.join(log_dir, model_name + '/ev'), max_queue=10, flush_secs=60)
 
     # set up dataloader
-    final_dim = (int(224 * resolution_scale), int(400 * resolution_scale))
+    final_dim = (int(224 * res_scale), int(400 * res_scale))
+    print('resolution:', final_dim)
     xbound = [-50.0, 50.0, 0.5]
     ybound = [-50.0, 50.0, 0.5]
     zbound = [-5.0, 5.0, 10.0]
@@ -368,6 +369,7 @@ def main(
     center_pool_ev = utils.misc.SimplePool(n_pool, version='np')
     offset_pool_ev = utils.misc.SimplePool(n_pool, version='np')
     iou_pool_ev = utils.misc.SimplePool(n_pool, version='np')
+    itime_pool_ev = utils.misc.SimplePool(n_pool, version='np')
     assert(n_pool > max_iters)
 
     intersection = 0
@@ -419,13 +421,13 @@ def main(
         sw_ev.summ_scalar('stats/offset_loss', metrics['offset_loss'])
 
         iter_time = time.time()-iter_start_time
-
+        
         time_pool_ev.update([iter_time])
         sw_ev.summ_scalar('pooled/time_per_batch', time_pool_ev.mean())
         sw_ev.summ_scalar('pooled/time_per_el', time_pool_ev.mean()/float(B))
 
-        print('%s; step %06d/%d; rtime %.2f; itime %.2f; loss %.5f; iou_ev %.1f' % (
-            model_name, global_step, max_iters, read_time, iter_time,
+        print('%s; step %06d/%d; rtime %.2f; itime %.2f (%.2f ms); loss %.5f; iou_ev %.1f' % (
+            model_name, global_step, max_iters, read_time, iter_time, 1000*time_pool_ev.mean(),
             total_loss.item(), 100*intersection/union))
     print('final %s mean iou' % dset, 100*intersection/union)
     
