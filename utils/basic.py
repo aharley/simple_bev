@@ -95,3 +95,16 @@ def normalize_grid2d(grid_y, grid_x, Y, X, clamp_extreme=True):
         grid_x = torch.clamp(grid_x, min=-2.0, max=2.0)
 
     return grid_y, grid_x
+
+def normalize_grid3d(grid_z, grid_y, grid_x, Z, Y, X, clamp_extreme=True):
+    # make things in [-1,1]
+    grid_z = 2.0*(grid_z / float(Z-1)) - 1.0
+    grid_y = 2.0*(grid_y / float(Y-1)) - 1.0
+    grid_x = 2.0*(grid_x / float(X-1)) - 1.0
+
+    if clamp_extreme:
+        grid_z = torch.clamp(grid_z, min=-2.0, max=2.0)
+        grid_y = torch.clamp(grid_y, min=-2.0, max=2.0)
+        grid_x = torch.clamp(grid_x, min=-2.0, max=2.0)
+
+    return grid_z, grid_y, grid_x

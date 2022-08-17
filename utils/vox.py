@@ -340,6 +340,52 @@ class Vox_util(object):
         values = values * valid_mem
         return values
 
+    def warp_tiled_to_mem(self, rgb_tileB, pixB_T_camA, camB_T_camA, Z, Y, X, assert_cube=False):
+        # rgb_tileB is B,C,D,H,W
+        # pixB_T_camA is B,4,4
+        # camB_T_camA is B,4,4
+
+        # rgb_tileB lives in B pixel coords but it has been tiled across the Z dimension
+        # we want everything in A memory coords
+
+        # this resamples the so that each C-dim pixel in rgb_tilB
+        # is put into its correct place in the voxelgrid
+        # (using the pinhole camera model)
+        
+        B, C, D, H, W = list(rgb_tileB.shape)
+
+        xyz_memA = utils.basic.gridcloud3d(B, Z, Y, X, norm=False, device=pixB_T_camA.device)
+
+        xyz_camA = self.Mem2Ref(xyz_memA, Z, Y, X, assert_cube=assert_cube)
+
+        xyz_camB = utils.geom.apply_4x4(camB_T_camA, xyz_camA)
+        z = xyz_camB[:,:,2]
+
+        xyz_pixB = utils.geom.apply_4x4(pixB_T_camA, xyz_camA)
+        normalizer = torch.unsqueeze(xyz_pixB[:,:,2], 2)
+        EPS=1e-6
+        # z = xyz_pixB[:,:,2]
+        xy_pixB = xyz_pixB[:,:,:2]/torch.clamp(normalizer, min=EPS)
+        # this is B x N x 2
+        # this is the (floating point) pixel coordinate of each voxel
+        x, y = xy_pixB[:,:,0], xy_pixB[:,:,1]
+        # these are B x N
+
+        x_valid = (x>-0.5).bool() & (x<float(W-0.5)).bool()
+        y_valid = (y>-0.5).bool() & (y<float(H-0.5)).bool()
+        z_valid = (z>0.0).bool()
+        valid_mem = (x_valid & y_valid & z_valid).reshape(B, 1, Z, Y, X).float()
+
+        z_pixB, y_pixB, x_pixB = utils.basic.normalize_grid3d(z, y, x, D, H, W)
+        xyz_pixB = torch.stack([x_pixB, y_pixB, z_pixB], axis=2)
+        xyz_pixB = torch.reshape(xyz_pixB, [B, Z, Y, X, 3])
+        values = F.grid_sample(rgb_tileB, xyz_pixB, align_corners=False)
+
+        values = torch.reshape(values, (B, C, Z, Y, X))
+        values = values * valid_mem
+        return values
+    
+
     def apply_mem_T_ref_to_lrtlist(self, lrtlist_cam, Z, Y, X, assert_cube=False):
         # lrtlist is B x N x 19, in cam coordinates
         # transforms them into mem coordinates, including a scale change for the lengths
