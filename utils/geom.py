@@ -220,3 +220,26 @@ def get_clist_from_lrtlist(lrtlist):
 def wrap2pi(rad_angle):
     # puts the angle into the range [-pi, pi]
     return torch.atan2(torch.sin(rad_angle), torch.cos(rad_angle))
+
+def camera2pixels(xyz, pix_T_cam):
+    # xyz is shaped B x H*W x 3
+    # returns xy, shaped B x H*W x 2
+    
+    fx, fy, x0, y0 = split_intrinsics(pix_T_cam)
+    x, y, z = torch.unbind(xyz, dim=-1)
+    B = list(z.shape)[0]
+
+    fx = torch.reshape(fx, [B,1])
+    fy = torch.reshape(fy, [B,1])
+    x0 = torch.reshape(x0, [B,1])
+    y0 = torch.reshape(y0, [B,1])
+    x = torch.reshape(x, [B,-1])
+    y = torch.reshape(y, [B,-1])
+    z = torch.reshape(z, [B,-1])
+
+    EPS = 1e-4
+    z = torch.clamp(z, min=EPS)
+    x = (x*fx)/z + x0
+    y = (y*fy)/z + y0
+    xy = torch.stack([x, y], dim=-1)
+    return xy
