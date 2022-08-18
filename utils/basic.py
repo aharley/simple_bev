@@ -28,6 +28,23 @@ def unpack_seqdim(tensor, B):
     tensor = torch.reshape(tensor, [B,S]+otherdims)
     return tensor
 
+def normalize_single(d):
+    # d is a whatever shape torch tensor
+    dmin = torch.min(d)
+    dmax = torch.max(d)
+    d = (d-dmin)/(EPS+(dmax-dmin))
+    return d
+
+def normalize(d):
+    # d is B x whatever. normalize within each element of the batch
+    out = torch.zeros(d.size())
+    if d.is_cuda:
+        out = out.cuda()
+    B = list(d.size())[0]
+    for b in list(range(B)):
+        out[b] = normalize_single(d[b])
+    return out
+
 def reduce_masked_mean(x, mask, dim=None, keepdim=False):
     # x and mask are the same shape, or at least broadcastably so < actually it's safer if you disallow broadcasting
     # returns shape-1
