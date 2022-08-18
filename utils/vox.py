@@ -340,7 +340,7 @@ class Vox_util(object):
         values = values * valid_mem
         return values
 
-    def warp_tiled_to_mem(self, rgb_tileB, pixB_T_camA, camB_T_camA, Z, Y, X, assert_cube=False):
+    def warp_tiled_to_mem(self, rgb_tileB, pixB_T_camA, camB_T_camA, Z, Y, X, DMAX, assert_cube=False):
         # rgb_tileB is B,C,D,H,W
         # pixB_T_camA is B,4,4
         # camB_T_camA is B,4,4
@@ -359,7 +359,10 @@ class Vox_util(object):
         xyz_camA = self.Mem2Ref(xyz_memA, Z, Y, X, assert_cube=assert_cube)
 
         xyz_camB = utils.geom.apply_4x4(camB_T_camA, xyz_camA)
-        z = xyz_camB[:,:,2]
+        z_camB = xyz_camB[:,:,2]
+
+        # rgb_tileB has depth=0.0 in the zeroth tile, and depth=DMAX in tile D-1
+        z_tileB = (D-1.0) * z_camB / float(DMAX)
 
         xyz_pixB = utils.geom.apply_4x4(pixB_T_camA, xyz_camA)
         normalizer = torch.unsqueeze(xyz_pixB[:,:,2], 2)
@@ -373,11 +376,11 @@ class Vox_util(object):
 
         x_valid = (x>-0.5).bool() & (x<float(W-0.5)).bool()
         y_valid = (y>-0.5).bool() & (y<float(H-0.5)).bool()
-        z_valid = (z>0.0).bool()
+        z_valid = (z_camB>0.0).bool()
         valid_mem = (x_valid & y_valid & z_valid).reshape(B, 1, Z, Y, X).float()
 
-        z_pixB, y_pixB, x_pixB = utils.basic.normalize_grid3d(z, y, x, D, H, W)
-        xyz_pixB = torch.stack([x_pixB, y_pixB, z_pixB], axis=2)
+        z_tileB, y_pixB, x_pixB = utils.basic.normalize_grid3d(z_tileB, y, x, D, H, W)
+        xyz_pixB = torch.stack([x_pixB, y_pixB, z_tileB], axis=2)
         xyz_pixB = torch.reshape(xyz_pixB, [B, Z, Y, X, 3])
         values = F.grid_sample(rgb_tileB, xyz_pixB, align_corners=False)
 

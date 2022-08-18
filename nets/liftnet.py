@@ -287,7 +287,7 @@ class Encoder_eff(nn.Module):
         return x
 
 class Liftnet(nn.Module):
-    def __init__(self, Z, Y, X, 
+    def __init__(self, Z, Y, X, ZMAX,
                  use_radar=False,
                  use_lidar=False,
                  use_metaradar=False,
@@ -299,6 +299,7 @@ class Liftnet(nn.Module):
         assert (encoder_type in ["res101", "res50", "effb0", "effb4"])
 
         self.Z, self.Y, self.X = Z, Y, X
+        self.ZMAX = ZMAX
         self.use_radar = use_radar
         self.use_lidar = use_lidar
         self.use_metaradar = use_metaradar
@@ -458,7 +459,7 @@ class Liftnet(nn.Module):
         feat_mems_ = vox_util.warp_tiled_to_mem(
             feat_tileXs_,
             utils.basic.matmul2(featpix_T_cams_, camXs_T_cam0_),
-            camXs_T_cam0_, Z, Y, X)
+            camXs_T_cam0_, Z, Y, X, self.ZMAX)
         feat_mems = __u(feat_mems_) # B, S, C, Z, Y, X
 
         mask_mems = (torch.abs(feat_mems) > 0).float()
