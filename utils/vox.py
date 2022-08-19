@@ -340,7 +340,7 @@ class Vox_util(object):
         values = values * valid_mem
         return values
 
-    def warp_tiled_to_mem(self, rgb_tileB, pixB_T_camA, camB_T_camA, Z, Y, X, DMAX, assert_cube=False):
+    def warp_tiled_to_mem(self, rgb_tileB, pixB_T_camA, camB_T_camA, Z, Y, X, DMIN, DMAX, assert_cube=False):
         # rgb_tileB is B,C,D,H,W
         # pixB_T_camA is B,4,4
         # camB_T_camA is B,4,4
@@ -361,8 +361,8 @@ class Vox_util(object):
         xyz_camB = utils.geom.apply_4x4(camB_T_camA, xyz_camA)
         z_camB = xyz_camB[:,:,2]
 
-        # rgb_tileB has depth=0.0 in the zeroth tile, and depth=DMAX in tile D-1
-        z_tileB = (D-1.0) * z_camB / float(DMAX)
+        # rgb_tileB has depth=DMIN in tile 0, and depth=DMAX in tile D-1
+        z_tileB = (D-1.0) * (z_camB-float(DMIN)) / float(DMAX-DMIN)
 
         xyz_pixB = utils.geom.apply_4x4(pixB_T_camA, xyz_camA)
         normalizer = torch.unsqueeze(xyz_pixB[:,:,2], 2)

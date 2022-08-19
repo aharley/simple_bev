@@ -451,7 +451,9 @@ class Liftnet(nn.Module):
         
         depth_camXs_ = feat_camXs_[:,:Z].unsqueeze(1) # BS,1,D,Hf,Wf
         feat_camXs_ = feat_camXs_[:,Z:].unsqueeze(2) # BS,C,1,Hf,Wf
-        depth_camXs_ = depth_camXs_.softmax(dim=2) # BS,1,D,Hf,Wf
+        depth_camXs_ = (depth_camXs_/0.07).softmax(dim=2) # BS,1,D,Hf,Wf
+        # depth_camXs_ = (depth_camXs_/0.1).softmax(dim=2) # BS,1,D,Hf,Wf
+        # depth_camXs_ = depth_camXs_.mean(dim=2, keepdim=True).repeat(1,1,Z,1,1) # uniform 
         feat_tileXs_ = feat_camXs_ * depth_camXs_ # BS,C,D,Hf,Wf
 
         # unproject image feature to 3d grid
@@ -459,11 +461,21 @@ class Liftnet(nn.Module):
         feat_mems_ = vox_util.warp_tiled_to_mem(
             feat_tileXs_,
             utils.basic.matmul2(featpix_T_cams_, camXs_T_cam0_),
-            camXs_T_cam0_, Z, Y, X, self.ZMAX)
+            camXs_T_cam0_, Z, Y, X, 5.0, self.ZMAX+5.0)
         feat_mems = __u(feat_mems_) # B, S, C, Z, Y, X
 
-        mask_mems = (torch.abs(feat_mems) > 0).float()
-        feat_mem = utils.basic.reduce_masked_mean(feat_mems, mask_mems, dim=1) # B, C, Z, Y, X
+        one_mems_ = vox_util.warp_tiled_to_mem(
+            torch.ones_like(feat_tileXs_),
+            utils.basic.matmul2(featpix_T_cams_, camXs_T_cam0_),
+            camXs_T_cam0_, Z, Y, X, 5.0, self.ZMAX+5.0)
+        one_mems = __u(one_mems_) # B, S, C, Z, Y, X
+
+        one_mems = one_mems.clamp(min=1.0)
+        # mask_mems = (torch.abs(feat_mems) > 0).float()
+        # feat_mem = utils.basic.reduce_masked_mean(feat_mems, mask_mems, dim=1) # B, C, Z, Y, X
+
+        feat_mem = utils.basic.reduce_masked_mean(feat_mems, one_mems, dim=1) # B, C, Z, Y, X
+        
 
         if self.rand_flip:
             self.bev_flip1_index = np.random.choice([0,1], B).astype(bool)
