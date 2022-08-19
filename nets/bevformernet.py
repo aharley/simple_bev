@@ -428,8 +428,8 @@ class Bevformernet(nn.Module):
             self.encoder = Encoder_eff(feat2d_dim, version='b4')
 
         # BEVFormer self & cross attention layers
-        self.bev_queries = nn.Parameter(torch.randn(latent_dim, Z, X)) # C, Z, X
-        self.bev_queries_pos = nn.Parameter(torch.randn(latent_dim, Z, X)) # C, Z, X
+        self.bev_queries = nn.Parameter(0.1*torch.randn(latent_dim, Z, X)) # C, Z, X
+        self.bev_queries_pos = nn.Parameter(0.1*torch.randn(latent_dim, Z, X)) # C, Z, X
         num_layers = 6
         self.num_layers = num_layers
         self.self_attn_layers = nn.ModuleList([
@@ -516,7 +516,7 @@ class Bevformernet(nn.Module):
 
         # self & cross attentions
         bev_queries = self.bev_queries.clone().unsqueeze(0).repeat(B,1,1,1).reshape(B, self.latent_dim, -1).permute(0,2,1) # B, Z*X, C
-        bev_queries_pos = self.bev_queries.clone().unsqueeze(0).repeat(B,1,1,1).reshape(B, self.latent_dim, -1).permute(0,2,1) # B, Z*X, C
+        bev_queries_pos = self.bev_queries_pos.clone().unsqueeze(0).repeat(B,1,1,1).reshape(B, self.latent_dim, -1).permute(0,2,1) # B, Z*X, C
         bev_keys = feat_camXs.reshape(B, S, C, Hf*Wf).permute(1, 3, 0, 2) # S, M, B, C
         spatial_shapes = bev_queries.new_zeros([1, 2]).long()
         spatial_shapes[0, 0] = Hf
@@ -550,8 +550,8 @@ class Bevformernet(nn.Module):
         if self.rand_flip:
             self.bev_flip1_index = np.random.choice([0,1], B).astype(bool)
             self.bev_flip2_index = np.random.choice([0,1], B).astype(bool)
-            feat_bev[self.bev_flip1_index] = torch.flip(feat_mem[self.bev_flip1_index], [-1])
-            feat_bev[self.bev_flip2_index] = torch.flip(feat_mem[self.bev_flip2_index], [-3])
+            feat_bev[self.bev_flip1_index] = torch.flip(feat_bev[self.bev_flip1_index], [-1])
+            feat_bev[self.bev_flip2_index] = torch.flip(feat_bev[self.bev_flip2_index], [-3])
 
         # bev decoder
         out_dict = self.decoder(feat_bev, (self.bev_flip1_index, self.bev_flip2_index) if self.rand_flip else None)
