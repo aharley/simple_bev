@@ -410,6 +410,7 @@ class Liftnet(nn.Module):
         """ Adapted from https://github.com/wayveai/fiery/blob/master/fiery/models/fiery.py#L222"""
         B,S,C,D,H,W = feats.shape
         output = torch.zeros((B,C,Z,X), dtype=torch.float, device=feats.device)
+        output_ones = torch.zeros((B,1,Z,X), dtype=torch.float, device=feats.device)
 
         feats = feats.permute(0,1,3,4,5,2) # put channels on end
 
@@ -439,27 +440,44 @@ class Liftnet(nn.Module):
 
             # sort the tensor contents
             inds = (
-                coords_mem_b[:, 0] * Z * Y
-                + coords_mem_b[:, 1] * Y
-                + coords_mem_b[:, 2]
+                coords_mem_b[:, 2] * Y * X
+                + coords_mem_b[:, 1] * X
+                + coords_mem_b[:, 0]
             )
             sorting = inds.argsort()
             x_b, coords_mem_b, inds = x_b[sorting], coords_mem_b[sorting], inds[sorting]
 
+            one_b = torch.ones_like(x_b[:,0:1])
             # project to BEV by summing within voxels
-            x_b, coords_mem_b = VoxelsSumming.apply(x_b, coords_mem_b, inds)
+            # x_b, coords_mem_b = VoxelsSumming.apply(x_b, coords_mem_b, inds)
+
+            # print('x_b0', x_b.shape)
+            # print('one_b0', one_b.shape)
+            
+            x_b, _ = VoxelsSumming.apply(x_b, coords_mem_b.clone(), inds)
+            one_b, coords_mem_b = VoxelsSumming.apply(one_b, coords_mem_b, inds)
+            # print('x_b', x_b.shape)
+            # print('one_b', one_b.shape)
             # print('x_b', x_b.shape)
             # print('coords_mem_b', coords_mem_b.shape)
 
+            x_b = x_b / one_b.clamp(min=1.0)
+
             bev_feature = torch.zeros((Z,Y,X,C), device=x_b.device)
+            bev_ones = torch.zeros((Z,Y,X,1), device=x_b.device)
             bev_feature[coords_mem_b[:,2],coords_mem_b[:,1],coords_mem_b[:,0]] = x_b # Z,Y,X,C
+            bev_ones[coords_mem_b[:,2],coords_mem_b[:,1],coords_mem_b[:,0]] = one_b # Z,Y,X,C
             # print('bev_feature', bev_feature.shape)
 
             bev_feature = bev_feature.sum(dim=1) # Z,X,C
-
             bev_feature = bev_feature.permute(2,0,1) # C,Z,X
 
+            bev_ones = bev_ones.sum(dim=1) # Z,X,C
+            bev_ones = bev_ones.permute(2,0,1) # C,Z,X
+            
             output[b] = bev_feature
+            output_ones[b] = bev_ones
+        output = output / output_ones.clamp(min=1)
 
         return output
 
@@ -538,22 +556,36 @@ class Liftnet(nn.Module):
         sx = Wf/float(W)
         Z, Y, X = self.Z, self.Y, self.X
         assert(CD==(self.D+self.feat2d_dim))
+
+        # print('self.D', self.D)
         
         depth_camXs_ = feat_camXs_[:,:self.D].unsqueeze(1) # BS,1,D,Hf,Wf
+        # depth_camXs_ = torch.randn_like(depth_camXs_)
         feat_camXs_ = feat_camXs_[:,self.D:].unsqueeze(2) # BS,C,1,Hf,Wf
-        depth_camXs_ = (depth_camXs_/0.07).softmax(dim=2) # BS,1,D,Hf,Wf
+
+        # feat_camXs_ = torch.ones_like(feat_camXs_)
+        # # depth_camXs_ = (depth_camXs_/0.07).softmax(dim=2) # BS,1,D,Hf,Wf
+        depth_camXs_ = (depth_camXs_).softmax(dim=2) # BS,1,D,Hf,Wf
+        # utils.basic.print_stats('feat_camXs_', feat_camXs_)
+
+        # depth_camXs_ = depth_camXs_ * 0.0
+        # depth_camXs_[:,:,int(self.D/2)] = 1.0
+        # depth_camXs_[:,:,0] = 1.0
+        # depth_camXs_[:,:,-1] = 1.0
+        # utils.basic.print_stats('feat_camXs_', feat_camXs_)
+        
         # depth_camXs_ = (depth_camXs_/0.1).softmax(dim=2) # BS,1,D,Hf,Wf
         # depth_camXs_ = depth_camXs_.mean(dim=2, keepdim=True).repeat(1,1,Z,1,1) # uniform 
         feat_tileXs_ = feat_camXs_ * depth_camXs_ # BS,C,D,Hf,Wf
         feat_tileXs = __u(feat_tileXs_) # B,S,C,D,Hf,Wf
-
         # z_tileB = (D-1.0) * (z_camB-float(DMIN)) / float(DMAX-DMIN)
+        # utils.basic.print_stats('feat_tileXs', feat_tileXs)
 
         # xyz_pixXs = utils.geom.meshgrid3d(B, self.D, Hf, Wf)
         # xyz_pixXs[:,:,2
         xyd_pixXs_ = utils.basic.gridcloud3d(B*S, self.D, Hf, Wf) # BS,DHW,3
         DMIN = 2.0 # slightly ahead of the cam
-        DMAX = self.ZMAX+4.0 # slightly farther, so that we get closer to the corners
+        DMAX = int(np.sqrt(self.ZMAX**2 + self.ZMAX**2)*0.9)
         xyd_pixXs_[:,:,2] = (xyd_pixXs_[:,:,2]/(self.D-1) * (DMAX-DMIN)) + DMIN # put into range [DMIN,DMAX]
         featpix_T_cams_ = utils.geom.scale_intrinsics(pix_T_cams_, sx, sy)
         # xyz_camXs_ = utils.geom.xyd2pointcloud(xyd_pixXs_, __p(pix_T_cams))
@@ -561,10 +593,11 @@ class Liftnet(nn.Module):
         xyz_cam0s_ = utils.geom.apply_4x4(__p(cam0_T_camXs), xyz_camXs_)
         xyz_mem0s_ = vox_util.Ref2Mem(xyz_cam0s_, Z, Y, X, assert_cube=False)
         xyz_mem0s = __u(xyz_mem0s_) # B,S,DHW,3
-        xyz_mem0s[:,:,:,1] = 0 # set all Y coords to 0
+        # xyz_mem0s[:,:,:,1] = 1 # set all Y coords the same 
+        # xyz_mem0s[:,:,:,1] = 0 # set all Y coords to 0
         feat_bev = self.splat_to_bev(feat_tileXs, xyz_mem0s, Z, Y, X)
         # print('feat_bev', feat_bev.shape)
-        
+        # utils.basic.print_stats('feat_bev', feat_bev)
         
         # # unproject image feature to 3d grid
         # featpix_T_cams_ = utils.geom.scale_intrinsics(pix_T_cams_, sx, sy)
@@ -611,5 +644,5 @@ class Liftnet(nn.Module):
         center_e = out_dict['instance_center']
         offset_e = out_dict['instance_offset']
 
-        return raw_e, feat_e, seg_e, center_e, offset_e
+        return raw_e, feat_bev, seg_e, center_e, offset_e
 
