@@ -171,7 +171,7 @@ class Decoder(nn.Module):
 
         if bev_flip_indices is not None:
             bev_flip1_index, bev_flip2_index = bev_flip_indices
-            x[bev_flip2_index] = torch.flip(x[bev_flip2_index], [-2]) # note [-2] instead of [-3], since Y is gone now
+            x[bev_flip2_index] = torch.flip(x[bev_flip2_index], [-2]) 
             x[bev_flip1_index] = torch.flip(x[bev_flip1_index], [-1])
 
         feat_output = self.feat_head(x)
@@ -619,11 +619,11 @@ class Liftnet(nn.Module):
         # feat_mem = utils.basic.reduce_masked_mean(feat_mems, one_mems, dim=1) # B, C, Z, Y, X
         
 
-        # if self.rand_flip:
-        #     self.bev_flip1_index = np.random.choice([0,1], B).astype(bool)
-        #     self.bev_flip2_index = np.random.choice([0,1], B).astype(bool)
-        #     feat_mem[self.bev_flip1_index] = torch.flip(feat_mem[self.bev_flip1_index], [-1])
-        #     feat_mem[self.bev_flip2_index] = torch.flip(feat_mem[self.bev_flip2_index], [-3])
+        if self.rand_flip:
+            self.bev_flip1_index = np.random.choice([0,1], B).astype(bool)
+            self.bev_flip2_index = np.random.choice([0,1], B).astype(bool)
+            feat_bev[self.bev_flip1_index] = torch.flip(feat_bev[self.bev_flip1_index], [-1])
+            feat_bev[self.bev_flip2_index] = torch.flip(feat_bev[self.bev_flip2_index], [-2])
 
         #     if rad_occ_mem0 is not None:
         #         rad_occ_mem0[self.bev_flip1_index] = torch.flip(rad_occ_mem0[self.bev_flip1_index], [-1])
