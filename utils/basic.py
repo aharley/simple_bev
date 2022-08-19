@@ -64,6 +64,29 @@ def reduce_masked_mean(x, mask, dim=None, keepdim=False):
     mean = numer/denom
     return mean
 
+def meshgrid2d(B, Y, X, stack=False, norm=False, device='cuda'):
+    # returns a meshgrid sized B x Y x X
+
+    grid_y = torch.linspace(0.0, Y-1, Y, device=torch.device(device))
+    grid_y = torch.reshape(grid_y, [1, Y, 1])
+    grid_y = grid_y.repeat(B, 1, X)
+
+    grid_x = torch.linspace(0.0, X-1, X, device=torch.device(device))
+    grid_x = torch.reshape(grid_x, [1, 1, X])
+    grid_x = grid_x.repeat(B, Y, 1)
+
+    if norm:
+        grid_y, grid_x = normalize_grid2d(
+            grid_y, grid_x, Y, X)
+
+    if stack:
+        # note we stack in xy order
+        # (see https://pytorch.org/docs/stable/nn.functional.html#torch.nn.functional.grid_sample)
+        grid = torch.stack([grid_x, grid_y], dim=-1)
+        return grid
+    else:
+        return grid_y, grid_x
+    
 def meshgrid3d(B, Z, Y, X, stack=False, norm=False, device='cuda'):
     # returns a meshgrid sized B x Z x Y x X
 
