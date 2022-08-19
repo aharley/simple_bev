@@ -1,7 +1,8 @@
 #!/bin/bash
 
+DATA_DIR="/mnt/fsx/nuscenes"
 # DATA_DIR="../nuscenes/full_v1.0"
-DATA_DIR="../nuscenes"
+# DATA_DIR="../nuscenes"
 
 # lif00: debug
 # lif01: show me feat_bev
@@ -82,33 +83,61 @@ EXP_NAME=lif54 # pred
 EXP_NAME=lif55 # don't print stats; go 1k
 EXP_NAME=lif56 # don't div by ones, just to se
 EXP_NAME=lif57 # div x_b also
-EXP_NAME=lif58 # 
+EXP_NAME=lif58 # aws
 
+
+# python train_nuscenes_bevseg.py \
+#        --exp_name=${EXP_NAME} \
+#        --max_iters=1000 \
+#        --log_freq=100 \
+#        --shuffle=True \
+#        --dset='mini' \
+#        --do_val=True \
+#        --val_freq=100 \
+#        --save_freq=9999999 \
+#        --batch_size=1 \
+#        --grad_acc=1 \
+#        --lr=5e-4 \
+#        --use_scheduler=True \
+#        --weight_decay=1e-6 \
+#        --nworkers=12 \
+#        --data_dir=$DATA_DIR \
+#        --log_dir='logs_nuscenes_bevseg' \
+#        --ckpt_dir='checkpoints/' \
+#        --do_rgbcompress=False \
+#        --res_scale=1 \
+#        --rand_flip=False \
+#        --rand_crop_and_resize=False \
+#        --do_shuffle_cams=False \
+#        --ncams=6 \
+#        --nsweeps=3 \
+#        --encoder_type='res101' \
+#        --device_ids=[0]
 
 python train_nuscenes_bevseg.py \
        --exp_name=${EXP_NAME} \
-       --max_iters=1000 \
-       --log_freq=100 \
+       --max_iters=25000 \
+       --log_freq=1000 \
        --shuffle=True \
-       --dset='mini' \
+       --dset='trainval' \
        --do_val=True \
        --val_freq=100 \
-       --save_freq=9999999 \
-       --batch_size=1 \
-       --grad_acc=1 \
+       --save_freq=1000 \
+       --batch_size=8 \
+       --grad_acc=5 \
        --lr=5e-4 \
        --use_scheduler=True \
        --weight_decay=1e-6 \
        --nworkers=12 \
        --data_dir=$DATA_DIR \
-       --log_dir='logs_nuscenes_bevseg' \
-       --ckpt_dir='checkpoints/' \
+       --log_dir='/mnt/fsx1/bev_baseline/logs_nuscenes_bevseg' \
+       --ckpt_dir='/mnt/fsx1/bev_baseline/checkpoints/' \
        --do_rgbcompress=False \
-       --res_scale=1 \
-       --rand_flip=False \
-       --rand_crop_and_resize=False \
-       --do_shuffle_cams=False \
+       --res_scale=2 \
+       --rand_flip=True \
+       --rand_crop_and_resize=True \
+       --do_shuffle_cams=True \
        --ncams=6 \
        --nsweeps=3 \
        --encoder_type='res101' \
-       --device_ids=[0]
+       --device_ids=[0,1,2,3,4,5,6,7]
