@@ -300,7 +300,7 @@ class VanillaSelfAttention(nn.Module):
         '''
         query: (B, N, C)
         '''
-        inp_residual = query
+        inp_residual = query.clone()
 
         if query_pos is not None:
             query = query + query_pos
