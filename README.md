@@ -29,14 +29,14 @@ To download a pre-trained camera-only model, run this:
 ```
 sh get_rgb_model.sh
 ```
-When evaluated at `res_scale=2` (`448x800`), this model should show a final trainval mean IOU of `47.6`, which is slightly higher than the number in our arXiv paper (`47.0`). 
+When evaluated at `res_scale=2` (`448x800`), this model should show a final trainval mean IOU of `47.6`, which is higher than the number in our arXiv paper (`47.0`). 
 
 To download a pre-trained camera-plus-radar model, run this:
 
 ```
 sh get_rad_model.sh
 ```
-When evaluated at `res_scale=2` (`448x800`) and `nsweeps=5`, this model should show a final trainval mean IOU of `55.8`, which is higher than the number in our arXiv paper (`55.7`).
+When evaluated at `res_scale=2` (`448x800`) and `nsweeps=5`, this model should show a final trainval mean IOU of `55.8`, which is slightly higher than the number in our arXiv paper (`55.7`).
 
 The main improvement since writing the arXiv paper is the addition of a learning rate scheduler, which you can activate with `use_scheduler=True` when training.
 
