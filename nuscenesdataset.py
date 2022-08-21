@@ -1,5 +1,6 @@
 """
-Code adapted from https://github.com/nv-tlabs/lift-splat-shoot
+code adapted from https://github.com/nv-tlabs/lift-splat-shoot
+and also https://github.com/wayveai/fiery/blob/master/fiery/data.py
 """
 
 import torch
@@ -13,10 +14,8 @@ from nuscenes.utils.splits import create_splits_scenes
 from nuscenes.utils.data_classes import Box
 from glob import glob
 
-# from .tools import get_lidar_data, img_transform, normalize_img, gen_dx_bx
 import torchvision
 from functools import reduce
-# from nuscenes.utils.data_classes import LidarPointCloud
 from nuscenes.utils.data_classes import RadarPointCloud
 from nuscenes.utils.data_classes import PointCloud
 from nuscenes.utils.geometry_utils import transform_matrix
@@ -192,8 +191,6 @@ def get_radar_data(nusc, sample_rec, nsweeps, min_distance, use_radar_filters):
     return points
 
 
-
-
 def ego_to_cam(points, rot, trans, intrins=None):
     """Transform points (3 x N) from ego frame into a pinhole camera
     """
@@ -236,40 +233,10 @@ def get_rot(h):
 
 
 def img_transform(img, resize_dims, crop):
-    # adjust image
     img = img.resize(resize_dims)
-    # print('img', img.shape)
-    # _, H, W = img.shape
-    # # center it
-    
-    # fH, fW = final_dims
-
-    # # if we increased the size, we'll 
-    # crop_h = int((H - fH)/2)
-    # if H > fH:
-    #     # we have more pixels than we need
-    #     # we'll crop inside
-    #     crop_h = int((H - fH)/2)
-    # else:
-    #     crop_h = int((fH - H)/2)
-
-    #     # crop_h = int(max(0, newH - fH) / 2)
-    #     # crop_w = int(max(0, newW - fW) / 2)
-    
-
     img = img.crop(crop)
     return img
 
-    # # post-homography transformation
-    # post_rot *= resize
-    # post_tran -= torch.Tensor(crop[:2])
-    # A = get_rot(rotate/180*np.pi)
-    # b = torch.Tensor([crop[2] - crop[0], crop[3] - crop[1]]) / 2
-    # b = A.matmul(-b) + b
-    # post_rot = A.matmul(post_rot)
-    # post_tran = A.matmul(post_tran) + b
-
-    # return img, post_rot, post_tran
 
 class NormalizeInverse(torchvision.transforms.Normalize):
     #  https://discuss.pytorch.org/t/simple-way-to-inverse-transform-normalization/4821/8
@@ -313,7 +280,7 @@ normalize_img_torch = torchvision.transforms.Compose((
 def gen_dx_bx(xbound, ybound, zbound):
     dx = torch.Tensor([row[2] for row in [xbound, ybound, zbound]])
     bx = torch.Tensor([row[0] + row[2]/2.0 for row in [xbound, ybound, zbound]])
-    nx = torch.LongTensor([(row[1] - row[0]) / row[2] for row in [xbound, ybound, zbound]])
+    nx = torch.LongTensor([int((row[1] - row[0]) / row[2]) for row in [xbound, ybound, zbound]])
 
     return dx, bx, nx
 
@@ -582,24 +549,28 @@ def get_local_map(nmap, center, stretch, layer_names, line_names):
 
 
 class NuscData(torch.utils.data.Dataset):
-    def __init__(self, nusc, is_train, data_aug_conf, grid_conf, nsweeps=1, include_extra=False, drop_rings=False, seqlen=1, refcam_id=1, include_rgbs=True, get_tids=False, temporal_aug=False, use_radar_filters=False, do_shuffle_cams=True):
+    def __init__(self, nusc, is_train, data_aug_conf, centroid=None, bounds=None, res_3d=None, nsweeps=1, include_extra=False, seqlen=1, refcam_id=1, include_rgbs=True, get_tids=False, temporal_aug=False, use_radar_filters=False, do_shuffle_cams=True):
         self.nusc = nusc
         self.is_train = is_train
         self.data_aug_conf = data_aug_conf
-        self.grid_conf = grid_conf
+        # self.grid_conf = grid_conf
         self.nsweeps = nsweeps
-        self.drop_rings = drop_rings
         self.include_extra = include_extra
         self.include_rgbs = include_rgbs
         self.use_radar_filters = use_radar_filters
         self.do_shuffle_cams = do_shuffle_cams
+        self.res_3d = res_3d
+        self.bounds = bounds
+        self.centroid = centroid
 
         self.seqlen = seqlen
         self.refcam_id = refcam_id
         
         self.scenes = self.get_scenes()
+        
         # print('applying hack to use just first scene')
         # self.scenes = self.scenes[0:1]
+        
         self.ixes = self.prepro()
         if temporal_aug:
             self.indices = self.get_indices_tempaug()
@@ -611,47 +582,18 @@ class NuscData(torch.utils.data.Dataset):
         # print('ixes', self.ixes.shape)
         print('indices', self.indices.shape)
 
+        XMIN, XMAX, YMIN, YMAX, ZMIN, ZMAX = self.bounds
+        Z, Y, X = self.res_3d
+
+        grid_conf = { # note the downstream util uses a different XYZ ordering
+            'xbound': [XMIN, XMAX, (XMAX-XMIN)/float(X)],
+            'ybound': [ZMIN, ZMAX, (ZMAX-ZMIN)/float(Z)],
+            'zbound': [YMIN, YMAX, (YMAX-YMIN)/float(Y)],
+        }
         dx, bx, nx = gen_dx_bx(grid_conf['xbound'], grid_conf['ybound'], grid_conf['zbound'])
         self.dx, self.bx, self.nx = dx.numpy(), bx.numpy(), nx.numpy()
 
-        # self.fix_nuscenes_formatting()
-
         print(self)
-
-    # def fix_nuscenes_formatting(self):
-    #     """If nuscenes is stored with trainval/1 trainval/2 ... structure, adjust the file paths
-    #     stored in the nuScenes object.
-    #     """
-    #     # check if default file paths work
-    #     rec = self.ixes[0]
-    #     sampimg = self.nusc.get('sample_data', rec['data']['CAM_FRONT'])
-    #     imgname = os.path.join(self.nusc.dataroot, sampimg['filename'])
-
-    #     def find_name(f):
-    #         d, fi = os.path.split(f)
-    #         d, di = os.path.split(d)
-    #         d, d0 = os.path.split(d)
-    #         d, d1 = os.path.split(d)
-    #         d, d2 = os.path.split(d)
-    #         return di, fi, f'{d2}/{d1}/{d0}/{di}/{fi}'
-
-    #     # adjust the image paths if needed
-    #     if not os.path.isfile(imgname):
-    #         print('adjusting nuscenes file paths')
-    #         fs = glob(os.path.join(self.nusc.dataroot, 'samples/*/samples/CAM*/*.jpg'))
-    #         fs += glob(os.path.join(self.nusc.dataroot, 'samples/*/samples/LIDAR_TOP/*.pcd.bin'))
-    #         info = {}
-    #         for f in fs:
-    #             di, fi, fname = find_name(f)
-    #             info[f'samples/{di}/{fi}'] = fname
-    #         fs = glob(os.path.join(self.nusc.dataroot, 'sweeps/*/sweeps/LIDAR_TOP/*.pcd.bin'))
-    #         for f in fs:
-    #             di, fi, fname = find_name(f)
-    #             info[f'sweeps/{di}/{fi}'] = fname
-    #         for rec in self.nusc.sample_data:
-    #             if rec['channel'] == 'LIDAR_TOP' or (rec['is_key_frame'] and rec['channel'] in self.data_aug_conf['cams']):
-    #                 rec['filename'] = info[rec['filename']]
-
     
     def get_scenes(self):
         # filter by scene split
@@ -659,20 +601,15 @@ class NuscData(torch.utils.data.Dataset):
             'v1.0-trainval': {True: 'train', False: 'val'},
             'v1.0-mini': {True: 'mini_train', False: 'mini_val'},
         }[self.nusc.version][self.is_train]
-
         scenes = create_splits_scenes()[split]
-
         return scenes
 
     def prepro(self):
         samples = [samp for samp in self.nusc.sample]
-
         # remove samples that aren't in this split
         samples = [samp for samp in samples if self.nusc.get('scene', samp['scene_token'])['name'] in self.scenes]
-
         # sort by scene, timestamp (only to make chronological viz easier)
         samples.sort(key=lambda x: (x['scene_token'], x['timestamp']))
-
         return samples
     
     def get_indices(self):
@@ -754,20 +691,13 @@ class NuscData(torch.utils.data.Dataset):
         fH, fW = self.data_aug_conf['final_dim']
         if self.is_train:
             if 'resize_lim' in self.data_aug_conf and self.data_aug_conf['resize_lim'] is not None:
-                # print('resize_lim', self.data_aug_conf['resize_lim'])
                 resize = np.random.uniform(*self.data_aug_conf['resize_lim'])
-                # print('resize', resize)
             else:
                 resize = self.data_aug_conf['resize_scale']
 
-            # print('resize', resize)
-
             resize_dims = (int(fW*resize), int(fH*resize))
 
-            # resize_dims = (int(W*resize), int(H*resize))
             newW, newH = resize_dims
-            # print('W, H', W, H)
-            # print('newW, newH', newW, newH)
 
             # center it
             crop_h = int((newH - fH)/2)
@@ -776,97 +706,13 @@ class NuscData(torch.utils.data.Dataset):
             crop_offset = self.data_aug_conf['crop_offset']
             crop_w = crop_w + int(np.random.uniform(-crop_offset, crop_offset))
             crop_h = crop_h + int(np.random.uniform(-crop_offset, crop_offset))
-            # crop_h = int((1 - np.random.uniform(*self.data_aug_conf['bot_pct_lim']))*newH) - fH
 
-            # crop_h = 46
-            # crop_w = int(max(0, (resized_width - final_width) / 2))
-
-            # crop_h = self.data_aug_conf['top_crop']
-            # crop_h = int(max((newH - fH) / 4, (newH - fH) / 2)) # tilt to positive
-            # crop_h = int(max(0, (newH - fH) / 2))
-            # crop_w = int(max(0, (newW - fW) / 2))
-            
-            # crop_h = int((1 - np.random.uniform(*self.data_aug_conf['bot_pct_lim']))*newH) - fH
-            # crop_w = int(np.random.uniform(0, max(0, newW - fW)))
-
-            # crop_h = int((1 - np.random.uniform(*self.data_aug_conf['bot_pct_lim']))*newH) - fH
-            
-            # crop_h = int(np.random.uniform(0, max(0, newH - fH)))
-            # crop_w = int(np.random.uniform(0, max(0, newW - fW)))
-            # crop_h = int(np.random.uniform(0-newH//10, max(0, newH - fH)))
-            # crop_w = int(np.random.uniform(0-newH//10, max(0, newW - fW)))
-
-            # crop_w = int(np.random.uniform(-W//10, W//10))
-            # crop_h = int(np.random.uniform(-H//10, H//10))
-
-            # the clean version i'm imagining is:
-            # first, resize the image a random amount
-            # then, center it to fit into my final bounds
-            # then, crop a random amount 
-
-            # crop_w = int(np.random.uniform(-50, 50))
-            # crop_h = int(np.random.uniform(-50, 50))
-            # resize = np.random.uniform(0.9, 1.1)
-            
-            # crop_w = int(np.random.uniform(-newW//10, newW//10))
-            # crop_h = int(np.random.uniform(-newH//10, newH//10))
-
-            # # crop = (crop_w, crop_h, crop_w + W, crop_h + H)
             crop = (crop_w, crop_h, crop_w + fW, crop_h + fH)
-
-
-            # crop_w = int(np.random.uniform(0-newH//10, max(0, newW - fW)))
-            # crop_h = -0
-            # crop_w = -0
-
-            # crop_x0 = int(np.random.uniform(-100, 100))
-            # crop_x1 = int(np.random.uniform(-100, 100))
-            # crop_w = int(np.random.uniform(0, max(0, newW - fW)))
-
-
-
-            # if newW < W: 
-            #     crop_w = int(max(0, fW - newW) / 2)
-            # else:
-            #     crop_w = int(max(0, newW - fW) / 2)
-
-            # if newH < H: 
-            #     crop_h = int(max(0, fH - newH) / 2)
-            # else:
-            #     crop_h = int(max(0, newH - fH) / 2)
-
-            # crop_h = int(max(0, newH - fH) / 2)
-            # crop_w = int(max(0, newW - fW) / 2)
-
-            # crop = (crop_w, crop_h, crop_w + fW, crop_h + fH)
-
-            # print('crop', crop)
-            
-        else:
-            # resize = 1.0
-
-            # resize = max(fH/H, fW/W)
-            # resize_dims = (int(W*resize), int(H*resize))
-            # newW, newH = resize_dims
-
+        else: # validation/test
+            # do a perfect resize
             resize_dims = (fW, fH)
-
-            # crop_h = int((newH - fH)/2)
-            # crop_w = int((newW - fW)/2)
-            # crop_h = int((1 - np.mean(self.data_aug_conf['bot_pct_lim']))*newH) - fH
-            # crop_w = int(max(0, newW - fW) / 2)
-
-            # # crop_h = self.data_aug_conf['top_crop']
-            # crop_h = int(max(0, (newH - fH) / 2))
-            # crop_w = int(max(0, (newW - fW) / 2))
-
-            # # crop_h = int((1 - np.mean(self.data_aug_conf['bot_pct_lim']))*newH) - fH
-            # crop_h = int(max(0, newH - fH) / 2)
-            # crop_w = int(max(0, newW - fW) / 2)
-
             crop_h = 0
             crop_w = 0
-
             crop = (crop_w, crop_h, crop_w + fW, crop_h + fH)
         return resize_dims, crop
 
@@ -889,19 +735,10 @@ class NuscData(torch.utils.data.Dataset):
             resize_dims, crop = self.sample_augmentation()
 
             H, W = self.data_aug_conf['H'], self.data_aug_conf['W']
-            # fH, fW = self.data_aug_conf['final_dim']
             sx = resize_dims[0]/float(W)
             sy = resize_dims[1]/float(H)
 
-            # final_dims = self.data_aug_conf['final_dim']
-            # print('sy, sx', sy, sx)
-        
-            # print('resize', resize)
-            # intrin = utils.py.scale_intrinsics(intrin, resize, resize)
             intrin = utils.geom.scale_intrinsics(intrin.unsqueeze(0), sx, sy).squeeze(0)
-
-            # print('crop', crop)
-            # crop = (0,0,352,128)
 
             fx, fy, x0, y0 = utils.geom.split_intrinsics(intrin.unsqueeze(0))
 
@@ -911,31 +748,17 @@ class NuscData(torch.utils.data.Dataset):
             pix_T_cam = utils.geom.merge_intrinsics(fx, fy, new_x0, new_y0)
             intrin = pix_T_cam.squeeze(0)
 
-            
-
             if include_rgbs:
                 img = img_transform(img, resize_dims, crop)
-            
-                # # for convenience, make augmentation matrices 3x3
-                # post_tran = torch.zeros(3)
-                # post_rot = torch.eye(3)
-                # post_tran[:2] = post_tran2
-                # post_rot[:2, :2] = post_rot2
                 imgs.append(totorch_img(img))
             else:
                 newW, newH = resize_dims
                 imgs.append(torch.zeros((3, newH, newW), dtype=torch.float32))
 
-            # imgs.append(normalize_img(img))
             intrins.append(intrin)
             rots.append(rot)
             trans.append(tran)
-            # post_rots.append(post_rot)
-            # post_trans.append(post_tran)
-        return (torch.stack(imgs), torch.stack(rots), torch.stack(trans),
-                torch.stack(intrins))
-        # return (torch.stack(imgs), torch.stack(rots), torch.stack(trans),
-        #         torch.stack(intrins), torch.stack(post_rots), torch.stack(post_trans))
+        return (torch.stack(imgs), torch.stack(rots), torch.stack(trans),torch.stack(intrins))
 
 
     def get_lidar_data(self, rec, nsweeps, include_extra=False):
@@ -949,15 +772,9 @@ class NuscData(torch.utils.data.Dataset):
     def get_radar_data(self, rec, nsweeps, include_extra=False):
         pts = get_radar_data(self.nusc, rec, nsweeps=nsweeps, min_distance=2.2, use_radar_filters=self.use_radar_filters)
         return torch.Tensor(pts)
-        # if include_extra:
-        #     return torch.Tensor(pts)
-        # else:
-        #     return torch.Tensor(pts)[:3]  # x,y,z
 
     def get_binimg(self, rec):
-        egopose = self.nusc.get('ego_pose',
-                                self.nusc.get('sample_data', rec['data']['LIDAR_TOP'])['ego_pose_token'])
-                                # self.nusc.get('sample_data', rec['data']['LIDAR_TOP'])['ego_pose_token'])
+        egopose = self.nusc.get('ego_pose', self.nusc.get('sample_data', rec['data']['LIDAR_TOP'])['ego_pose_token'])
         trans = -np.array(egopose['translation'])
         rot = Quaternion(egopose['rotation']).inverse
         img = np.zeros((self.nx[0], self.nx[1]))
@@ -1039,23 +856,15 @@ class NuscData(torch.utils.data.Dataset):
             radius = 3
         center, offset = self.vox_util.xyz2circles(clist_cam, radius, self.Z, self.Y, self.X, soft=True, already_mem=False, also_offset=True)
 
-        # zgrid, xgrid = torch.meshgrid(torch.arange(self.Z, dtype=torch.float), torch.arange(self.X, dtype=torch.float))
-        # offset = torch.zeros((1, 2, self.Z, self.X), dtype=torch.float32)
-        # masklist = 
         masklist = torch.zeros((1, N, 1, self.Z, 1, self.X), dtype=torch.float32)
-        # sizelist = torch.zeros((1, N, 3, self.Z, 1, self.X), dtype=torch.float32)
         for n in range(N):
             inst = (seg_bev==(n+1)).float() # 1, Z, X
-            # masklist[0,n,0,:,0] = utils.improc.dilate2d(inst).squeeze()
             masklist[0,n,0,:,0] = (inst.squeeze() > 0.01).float()
 
         size_bev = torch.zeros((1, 3, self.Z, self.X), dtype=torch.float32)
         for n in range(N):
             inst = (seg_bev==(n+1)).float() # 1, Z, X
             inst = inst.reshape(self.Z, self.X) > 0.01
-            # print('size_bev[0:,inst]',
-            # print('inst', inst.shape)
-            # print('lenlist[0,n]', lenlist[0,n].shape)
             size_bev[0,:,inst] = lenlist[0,n].unsqueeze(1)
 
         ry_bev = torch.zeros((1, 1, self.Z, self.X), dtype=torch.float32)
@@ -1070,11 +879,6 @@ class NuscData(torch.utils.data.Dataset):
             inst = inst.reshape(self.Z, self.X) > 0.01
             ycoord_bev[0,:,inst] = tlist_[n,1] # y part
             
-        # # center is B,N,Z,Y,X
-        # # offset is B,N,3,Z,Y,X
-        # masklist = self.vox_util.assemble_padded_obj_masklist(lrtlist_cam, torch.ones_like(lrtlist_cam[:,:,0]), self.Z, self.Y, self.X, additive_coeff=0.5)
-        # # masklist is B,N,1,Z,Y,X
-
         offset = offset * masklist
 
         offset = torch.sum(offset, dim=1) # B,3,Z,Y,X
@@ -1085,14 +889,11 @@ class NuscData(torch.utils.data.Dataset):
         offset = min_offset + max_offset
         
         center = torch.max(center, dim=1, keepdim=True)[0] # B,1,Z,Y,X
-        # offset = offset * center.unsqueeze(2) # B,1,
         center = torch.max(center, dim=3)[0] # max along Y; 1,Z,X
         return center.squeeze(0), offset.squeeze(0), size_bev.squeeze(0), ry_bev.squeeze(0), ycoord_bev.squeeze(0) # 1,Z,X; 2,Z,X; 3,Z,X; 1,Z,X
 
     def get_lrtlist(self, rec):
-        egopose = self.nusc.get('ego_pose',
-                                self.nusc.get('sample_data', rec['data']['LIDAR_TOP'])['ego_pose_token'])
-                                # self.nusc.get('sample_data', rec['data']['LIDAR_TOP'])['ego_pose_token'])
+        egopose = self.nusc.get('ego_pose', self.nusc.get('sample_data', rec['data']['LIDAR_TOP'])['ego_pose_token'])
         trans = -np.array(egopose['translation'])
         rot = Quaternion(egopose['rotation']).inverse
         lrtlist = []
@@ -1104,14 +905,10 @@ class NuscData(torch.utils.data.Dataset):
             # add category for lyft
             if not inst['category_name'].split('.')[0] == 'vehicle':
                 continue
-            # if discard_invisible and int(inst['visibility_token']) == 1:
             if int(inst['visibility_token']) == 1:
                 vislist.append(torch.tensor(0.0)) # invisible
             else:
                 vislist.append(torch.tensor(1.0)) # visible
-                # # print('dropping invisible vehicle')
-                # # filter invisible vehicles
-                # continue
             box = Box(inst['translation'], inst['size'], Quaternion(inst['rotation']))
             box.translate(trans)
             box.rotate(rot)
@@ -1167,28 +964,11 @@ class VizData(NuscData):
     def __init__(self, *args, **kwargs):
         super(VizData, self).__init__(*args, **kwargs)
 
-        scene_centroid_x = 0.0
-        scene_centroid_y = 1.0
-        scene_centroid_z = 0.0
-        scene_centroid = np.array([scene_centroid_x,
-                                   scene_centroid_y,
-                                   scene_centroid_z]).reshape([1, 3])
-        scene_centroid = torch.from_numpy(scene_centroid).float().cuda()
-        
-        XMIN, XMAX = -50, 50
-        ZMIN, ZMAX = -50, 50
-        # XMIN, XMAX = -25, 25
-        # ZMIN, ZMAX = -25, 25
-        YMIN, YMAX = -5, 5
-        bounds = (XMIN, XMAX, YMIN, YMAX, ZMIN, ZMAX)
-        Z, Y, X = 200, 1, 200
-        # Z, Y, X = 400, 1, 400
-        # Z, Y, X = 128, 1, 128
-        # Z, Y, X = 200*2, 1, 200*2
+        Z, Y, X = self.res_3d
         self.vox_util = utils.vox.Vox_util(
             Z, Y, X,
-            scene_centroid=scene_centroid,
-            bounds=bounds,
+            scene_centroid=torch.from_numpy(self.centroid).float().cuda(),
+            bounds=self.bounds,
             assert_cube=False)
         self.Z, self.Y, self.X = Z, Y, X
 
@@ -1196,11 +976,9 @@ class VizData(NuscData):
         # print('index %d; cam_id' % index, cam_id)
         rec = self.ixes[index]
         
-        # imgs, rots, trans, intrins, post_rots, post_trans = self.get_image_data(rec, cams, include_rgbs=self.include_rgbs)
         imgs, rots, trans, intrins = self.get_image_data(rec, cams, include_rgbs=self.include_rgbs)
         lidar_data = self.get_lidar_data(rec, nsweeps=self.nsweeps, include_extra=self.include_extra)
         binimg, egopose = self.get_binimg(rec)
-        # print('egopose', egopose)
 
         if refcam_id is None:
             if self.is_train:
@@ -1209,9 +987,6 @@ class VizData(NuscData):
             else:
                 refcam_id = self.refcam_id
             
-        # print('imgs', imgs.shape)
-        # print('rots', rots.shape)
-
         imgs_ = imgs.clone()
         rots_ = rots.clone()
         trans_ = trans.clone()
@@ -1230,61 +1005,29 @@ class VizData(NuscData):
         intrins[0] = intrins_[refcam_id].clone()
         intrins[refcam_id] = intrins_[0].clone()
 
-            
-            
-            
-        # else:
-        #     cam_id = self.cam_id
-            
         radar_data = self.get_radar_data(rec, nsweeps=self.nsweeps)
-        # print('radar_data', radar_data.shape)
 
-        # print('lidar_data', lidar_data.shape)
         if self.include_extra:
             lidar_extra = lidar_data[3:]
             lidar_data = lidar_data[:3]
         else:
             lidar_extra = lidar_data[:2]*0
-        # print('lidar_data', lidar_data.shape)
 
         lrtlist_, boxlist_, vislist_, tidlist_ = self.get_lrtlist(rec)
-        # print('lrtlist', lrtlist.shape)
         N_ = lrtlist_.shape[0]
-        # lrtlist_ is N, 19
 
         # import ipdb; ipdb.set_trace()
-
         if N_ > 0:
             
             velo_T_cam = utils.geom.merge_rt(rots, trans)
             cam_T_velo = utils.geom.safe_inverse(velo_T_cam)
-            # print('lrtlist_', lrtlist_.shape)
-            # lrtlist_cam = utils.geom.apply_4x4_to_lrt(cam_T_velo[cam_id:cam_id+1].repeat(N_, 1, 1), lrtlist_).unsqueeze(0)
 
             # note we index 0:1, since we already put refcam into zeroth position
             lrtlist_cam = utils.geom.apply_4x4_to_lrt(cam_T_velo[0:1].repeat(N_, 1, 1), lrtlist_).unsqueeze(0)
-            # print('lrtlist_cam', lrtlist_cam.shape)
 
             seg_bev, valid_bev = self.get_seg_bev(lrtlist_cam, vislist_)
-            # print('seg_bev', seg_bev.shape)
             
             center_bev, offset_bev, size_bev, ry_bev, ycoord_bev = self.get_center_and_offset_bev(lrtlist_cam, seg_bev)
-            # print('center_bev', center_bev.shape)
-            # print('size_bev', size_bev.shape)
-
-            # # offset is 1,N,2,Z,X
-            # offset = offset * seg_bev.reshape(1, 1, 1, self.Z, self.X)
-            # offset_bev = torch.max(offset[0], dim=0)[0] # 2,Z,X
-            
-            
-            # seg_mem = self.vox_util.assemble_padded_obj_masklist(
-            #     lrtlist_cam, torch.ones_like(lrtlist_cam[:,:,0]), self.Z, self.Y, self.X, additive_coeff=0.25)
-            # # print('seg_mem', seg_mem.shape)
-            # seg_mem = torch.max(seg_mem, dim=1)[0]
-            # # print('seg_mem', seg_mem.shape)
-            # seg_bev = torch.max(seg_mem, dim=3)[0]
-            # # print('seg_bev', seg_bev.shape)
-            # seg_bev = seg_bev[0]
         else:
             seg_bev = torch.zeros((1, self.Z, self.X), dtype=torch.float32)
             valid_bev = torch.ones((1, self.Z, self.X), dtype=torch.float32)
@@ -1294,26 +1037,15 @@ class VizData(NuscData):
             ry_bev = torch.zeros((1, self.Z, self.X), dtype=torch.float32)
             ycoord_bev = torch.zeros((1, self.Z, self.X), dtype=torch.float32)
 
-        N = 150 # i've seen 103 before
+        N = 150 # i've seen n as high as 103 before, so 150 is probably safe (max number of objects)
         lrtlist = torch.zeros((N, 19), dtype=torch.float32)
         vislist = torch.zeros((N), dtype=torch.float32)
         scorelist = torch.zeros((N), dtype=torch.float32)
         lrtlist[:N_] = lrtlist_
         vislist[:N_] = vislist_
         scorelist[:N_] = 1
-
-        # print('lrtlist', lrtlist.shape)
-        # print('scorelist', scorelist.shape)
-        # print('vislist', vislist.shape)
-
         
-        # lidar is like 3, V, where V~=26k 
-
-        # print('lidar_data', lidar_data.shape)
-
-        # pad to some OK size;
-        # it seems like ~26k is normal
-
+        # lidar is shaped 3,V, where V~=26k 
         times = lidar_extra[2] # V
         inds = times==times[0]
         lidar0_data = lidar_data[:,inds]
@@ -1325,10 +1057,7 @@ class VizData(NuscData):
         lidar_extra = np.transpose(lidar_extra)
         V = 30000*self.nsweeps
         if lidar_data.shape[0] > V:
-            # # print('lidar_data.shape[0]', lidar_data.shape[0])
-            # np.random.shuffle(lidar_data)
-
-            assert(False) # i expect this to never happen
+            assert(False) # if this happens, it's probably better to increase V than to subsample as below
             lidar0_data = lidar0_data[:V//self.nsweeps]
             lidar0_extra = lidar0_extra[:V//self.nsweeps]
             lidar_data = lidar_data[:V]
@@ -1343,17 +1072,7 @@ class VizData(NuscData):
         lidar_data = np.transpose(lidar_data)
         lidar_extra = np.transpose(lidar_extra)
 
-        if self.drop_rings:
-            ring0 = lidar0_extra[1] # V
-            # zero out a random number of rings
-            num_rings = np.random.randint(2, 16)
-            ring_inds = np.random.choice(32, size=num_rings, replace=False)
-            # print('zeroing out:', ring_inds)
-            for ri in ring_inds:
-                lidar0_data[:,ring0[:]==ri] = 0
-
-        # print('lidar_data', lidar_data.shape)
-
+        # radar has <700 points 
         radar_data = np.transpose(radar_data)
         V = 700*self.nsweeps
         if radar_data.shape[0] > V:
@@ -1389,11 +1108,6 @@ class VizData(NuscData):
             refcam_id = np.random.randint(1, len(cams))
         else:
             refcam_id = self.refcam_id
-        # print('seq index', index)
-        # print('choosing refcam', cam_id)
-
-        # if self.seqlen==1:
-        #    return self.get_single_item(self.indices[index][0], cams, cam_id=cam_id)
         
         all_imgs = []
         all_rots = []
@@ -1417,8 +1131,6 @@ class VizData(NuscData):
             # print('grabbing index %d' % index_t)
             imgs, rots, trans, intrins, lidar0_data, lidar0_extra, lidar_data, lidar_extra, lrtlist, vislist, tidlist, scorelist, seg_bev, valid_bev, center_bev, offset_bev, size_bev, ry_bev, ycoord_bev, radar_data, egopose = self.get_single_item(index_t, cams, refcam_id=refcam_id)
 
-            # print('rots', rots)
-            
             all_imgs.append(imgs)
             all_rots.append(rots)
             all_trans.append(trans)
@@ -1456,10 +1168,6 @@ class VizData(NuscData):
         all_offset_bev = torch.stack(all_offset_bev)
         all_radar_data = torch.stack(all_radar_data)
         all_egopose = torch.stack(all_egopose)
-
-        # # i want to come up with coherent unique tids
-        # print('all_tidlist', all_tidlist)
-        # import ipdb; ipdb.set_trace()
         
         usable_tidlist = -1*torch.ones_like(all_scorelist).long()
         counter = 0
@@ -1477,88 +1185,68 @@ class VizData(NuscData):
                         counter += 1
         all_tidlist = usable_tidlist
 
-
-
-        # maybe here i can also collect the object gt, as in:
-        # clists that are valid on frame0, and continue to the end of the video
-
-        # traj_xyz
-
-        # collect_object_info(lrtlist_camRs, tidlist_s, scorelist_s, K, boxlist_camRs=None, mod='', summ_writer=None)
-        # obj_lrt_traj, obj_tid_traj, obj_score_traj = utils.misc.collect_object_info(
-        #     __u0(lrtlist_cam0), __u0(tidlist), __u0(scorelist), K*2)
-        
-
-
         return all_imgs, all_rots, all_trans, all_intrins, all_lidar0_data, all_lidar0_extra, all_lidar_data, all_lidar_extra, all_lrtlist, all_vislist, all_tidlist, all_scorelist, all_seg_bev, all_valid_bev, all_center_bev, all_offset_bev, all_radar_data, all_egopose
 
-class SegmentationData(NuscData):
-    def __init__(self, *args, **kwargs):
-        super(SegmentationData, self).__init__(*args, **kwargs)
-    
-    def __getitem__(self, index):
-        rec = self.ixes[index]
-
-        cams = self.choose_cams()
-        imgs, rots, trans, intrins, post_rots, post_trans = self.get_image_data(rec, cams)
-        binimg, _ = self.get_binimg(rec)
-        
-        return imgs, rots, trans, intrins, post_rots, post_trans, binimg
 
 def worker_rnd_init(x):
     np.random.seed(13 + x)
 
 
-def compile_data(version, dataroot, data_aug_conf, grid_conf, bsz,
-                 nworkers, parser_name, shuffle=True, nsweeps=1, nworkers_val=1, include_extra=True, drop_rings=False, seqlen=1, refcam_id=1, get_tids=False,
+def compile_data(version, dataroot, data_aug_conf, centroid, bounds, res_3d, bsz,
+                 nworkers, shuffle=True, nsweeps=1, nworkers_val=1, include_extra=True, seqlen=1, refcam_id=1, get_tids=False,
                  include_rgbs=True, temporal_aug=False, use_radar_filters=False, do_shuffle_cams=True):
     print('loading nuscenes...')
     nusc = NuScenes(version='v1.0-{}'.format(version),
                     dataroot=os.path.join(dataroot, version),
                     verbose=False)
-    parser = {
-        'vizdata': VizData,
-        'segmentationdata': SegmentationData,
-    }[parser_name]
     print('making parser...')
-    traindata = parser(nusc,
-                       is_train=True,
-                       data_aug_conf=data_aug_conf,
-                       nsweeps=nsweeps,
-                       grid_conf=grid_conf,
-                       include_extra=include_extra,
-                       drop_rings=drop_rings,
-                       seqlen=seqlen,
-                       refcam_id=refcam_id,
-                       include_rgbs=include_rgbs,
-                       get_tids=get_tids,
-                       temporal_aug=temporal_aug,
-                       use_radar_filters=use_radar_filters,
-                       do_shuffle_cams=do_shuffle_cams)
-    valdata = parser(nusc,
-                     is_train=False,
-                     data_aug_conf=data_aug_conf,
-                     nsweeps=nsweeps,
-                     grid_conf=grid_conf,
-                     include_extra=include_extra,
-                     seqlen=seqlen,
-                     refcam_id=refcam_id,
-                     include_rgbs=include_rgbs,
-                     get_tids=get_tids,
-                     temporal_aug=False,
-                     use_radar_filters=use_radar_filters,
-                     do_shuffle_cams=False)
+    traindata = VizData(
+        nusc,
+        is_train=True,
+        data_aug_conf=data_aug_conf,
+        nsweeps=nsweeps,
+        centroid=centroid,
+        bounds=bounds,
+        res_3d=res_3d,
+        include_extra=include_extra,
+        seqlen=seqlen,
+        refcam_id=refcam_id,
+        include_rgbs=include_rgbs,
+        get_tids=get_tids,
+        temporal_aug=temporal_aug,
+        use_radar_filters=use_radar_filters,
+        do_shuffle_cams=do_shuffle_cams)
+    valdata = VizData(
+        nusc,
+        is_train=False,
+        data_aug_conf=data_aug_conf,
+        nsweeps=nsweeps,
+        centroid=centroid,
+        bounds=bounds,
+        res_3d=res_3d,
+        include_extra=include_extra,
+        seqlen=seqlen,
+        refcam_id=refcam_id,
+        include_rgbs=include_rgbs,
+        get_tids=get_tids,
+        temporal_aug=False,
+        use_radar_filters=use_radar_filters,
+        do_shuffle_cams=False)
 
-    trainloader = torch.utils.data.DataLoader(traindata, batch_size=bsz,
-                                              shuffle=shuffle,
-                                              num_workers=nworkers,
-                                              drop_last=True,
-                                              worker_init_fn=worker_rnd_init,
-                                              pin_memory=False)
-    valloader = torch.utils.data.DataLoader(valdata, batch_size=bsz,
-                                            shuffle=shuffle,
-                                            num_workers=nworkers_val,
-                                            drop_last=True,
-                                            pin_memory=False)
+    trainloader = torch.utils.data.DataLoader(
+        traindata,
+        batch_size=bsz,
+        shuffle=shuffle,
+        num_workers=nworkers,
+        drop_last=True,
+        worker_init_fn=worker_rnd_init,
+        pin_memory=False)
+    valloader = torch.utils.data.DataLoader(
+        valdata,
+        batch_size=bsz,
+        shuffle=shuffle,
+        num_workers=nworkers_val,
+        drop_last=True,
+        pin_memory=False)
     print('data ready')
     return trainloader, valloader
