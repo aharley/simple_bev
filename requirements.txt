@@ -1,0 +1,7 @@
+fire==0.4.0
+efficientnet_pytorch==0.7.1
+pyquaternion==0.9.9
+nuscenes-devkit
+opencv-python==4.6.0.66
+tensorboardX==2.2
+matplotlib==3.5.1
