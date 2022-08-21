@@ -142,6 +142,8 @@ This ordering stands even if a tensor is missing some dims. For example, plain i
 - Y: down
 - X: right
 
+This means the top-left of an image is "0,0", and coordinates increase as you travel right and down. `Z` increases forward because it's the depth axis.
+
 ### Geometry conventions
 
 We write pointclouds/tensors and transformations as follows:
