@@ -131,7 +131,7 @@ python eval_nuscenes.py \
 ## Code notes
 ### Tensor shapes
 
-We maintain consistent axis ordering across all tensors. In general, the ordering is `B x S x C x Z x Y x X`, where
+We maintain consistent axis ordering across all tensors. In general, the ordering is `B,S,C,Z,Y,X`, where
 
 - `B`: batch
 - `S`: sequence (for temporal or multiview data)
@@ -140,7 +140,7 @@ We maintain consistent axis ordering across all tensors. In general, the orderin
 - `Y`: height
 - `X`: width
 
-This ordering stands even if a tensor is missing some dims. For example, plain images are `B x C x Y x X` (as is the pytorch standard).
+This ordering stands even if a tensor is missing some dims. For example, plain images are `B,C,Y,X` (as is the pytorch standard).
 
 ### Axis directions
 
@@ -173,7 +173,7 @@ In this project's context, we often need something like this:
 If you use this code for your research, please cite:
 
 **A Simple Baseline for BEV Perception Without LiDAR**.
-[Adam W. Harley](https://cs.cmu.edu/~aharley),
+[Adam W. Harley](https://adamharley.com/),
 [Zhaoyuan Fang](https://zfang399.github.io/),
 [Jie Li](https://www.tri.global/about-us/jie-li/),
 [Rares Ambrus](https://www.csc.kth.se/~raambrus/),
