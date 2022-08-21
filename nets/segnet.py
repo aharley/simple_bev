@@ -16,7 +16,6 @@ from efficientnet_pytorch import EfficientNet
 EPS = 1e-4
 
 from functools import partial
-from einops.layers.torch import Rearrange, Reduce
 
 def set_bn_momentum(model, momentum=0.1):
     for m in model.modules():
