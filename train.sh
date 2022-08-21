@@ -7,6 +7,7 @@ DATA_DIR="../nuscenes"
 EXP_NAME="rgb00" # default settings
 EXP_NAME="rgb01" # removed some code duplication
 EXP_NAME="rgb02" # cleaned up dataset file
+EXP_NAME="rgb03" # updated log dir
 
 python train_nuscenes.py \
        --exp_name=${EXP_NAME} \
@@ -16,7 +17,7 @@ python train_nuscenes.py \
        --batch_size=1 \
        --grad_acc=5 \
        --data_dir=$DATA_DIR \
-       --log_dir='logs_nuscenes_bevseg' \
+       --log_dir='logs_nuscenes' \
        --ckpt_dir='checkpoints' \
        --res_scale=1 \
        --ncams=6 \
