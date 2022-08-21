@@ -29,13 +29,18 @@ To download a pre-trained camera-only model, run this:
 ```
 sh get_rgb_model.sh
 ```
+When evaluated at `res_scale=2` (`448x800`), this model should show a final trainval mean IOU of `47.6`, which is slightly higher than the number in our arXiv paper (`47.0`). 
 
 To download a pre-trained camera-plus-radar model, run this:
 
 ```
 sh get_rad_model.sh
 ```
+When evaluated at `res_scale=2` (`448x800`) and `nsweeps=5`, this model should show a final trainval mean IOU of `55.8`, which is higher than the number in our arXiv paper (`55.7`).
 
+The main improvement since writing the arXiv paper is the addition of a learning rate scheduler, which you can activate with `use_scheduler=True` when training.
+
+Note there is also some variance across training runs, which alters results by +-0.1 IOU. It should be possible to cherry-pick checkpoints along the training process, but we recommend to pick `max_iters` and just report the final number (as we have done).  
 
 ## Training
 
@@ -61,6 +66,7 @@ python train_nuscenes.py \
        --do_rgbcompress=True \
        --device_ids=[0,1,2,3]
 ```
+
 
 To train a model that matches our pre-trained camera-plus-radar model, run a command like this:
 
