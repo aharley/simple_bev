@@ -16,7 +16,6 @@ from efficientnet_pytorch import EfficientNet
 EPS = 1e-4
 
 from functools import partial
-from einops.layers.torch import Rearrange, Reduce
 
 class VoxelsSumming(torch.autograd.Function):
     """Adapted from https://github.com/nv-tlabs/lift-splat-shoot/blob/master/src/tools.py#L193"""
