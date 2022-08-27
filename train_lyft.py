@@ -333,7 +333,7 @@ def main(
         'crop_offset': crop_offset,
         'resize_lim': resize_lim,
         'final_dim': final_dim,
-        'H': 1024, 'W': 1920,
+        'H': 1080, 'W': 1920,
         'cams': ['CAM_FRONT_LEFT', 'CAM_FRONT', 'CAM_FRONT_RIGHT',
                  'CAM_BACK_LEFT', 'CAM_BACK', 'CAM_BACK_RIGHT'],
         'ncams': ncams,
@@ -346,7 +346,7 @@ def main(
         bounds=bounds,
         res_3d=(Z,Y,X),
         bsz=B,
-        nworkers=0,
+        nworkers=nworkers,
         shuffle=shuffle,
         use_radar_filters=use_radar_filters,
         seqlen=1, # we do not load a temporal sequence here, but that can work with this dataloader
