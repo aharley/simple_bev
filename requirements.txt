@@ -9,3 +9,4 @@ scikit-learn==1.1.2
 scikit-image==0.19.3
 protobuf==3.19.4
 tensorboard==2.10.0
+git+https://github.com/lyft/nuscenes-devkit
