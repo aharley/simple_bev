@@ -1,13 +1,15 @@
 import numpy as np
 import os
-import imageio
+import imageio.v2 as imageio
 import cv2
 import torch
 import torch.nn.functional as F
 
-vid = 14
-folder_name = "/zfsauton2/home/zhaoyuaf/map3d/sample_vis_{0}".format(vid)
-savefolder_name = "/zfsauton2/home/zhaoyuaf/map3d/sample_vis_{0}_collate".format(vid)
+vid_id = 0
+model_name = "v02"
+folder_name = "vis_%s/sample_vis_%03d" % (model_name, vid_id)
+print('folder_name', folder_name)
+savefolder_name = "collage_%s/sample_vis_%03d" % (model_name, vid_id)
 os.makedirs(savefolder_name, exist_ok=True)
 T = 40
 seg_h, seg_w = 600, 600
@@ -42,16 +44,16 @@ for t in range(T):
     cam5 = imageio.imread(os.path.join(folder_name, "cam5_rgb_%03d.png" % t))
     cam5 = cv2.resize(cam5.astype(np.uint8), (rgb_w, rgb_h))
 
-    # collect into collate
-    collate_t = np.zeros((seg_h + rgb_h*2, seg_w * 2, 3))
-    collate_t[:seg_h, :seg_w] = seg_e
-    collate_t[:seg_h, seg_w:] = seg_g
-    collate_t[seg_h:seg_h+rgb_h, :rgb_w] = cam1
-    collate_t[seg_h:seg_h+rgb_h, rgb_w:rgb_w*2] = cam0
-    collate_t[seg_h:seg_h+rgb_h, rgb_w*2:] = cam2
-    collate_t[seg_h+rgb_h:seg_h+rgb_h*2, :rgb_w] = cam5
-    collate_t[seg_h+rgb_h:seg_h+rgb_h*2, rgb_w:rgb_w*2] = cam4
-    collate_t[seg_h+rgb_h:seg_h+rgb_h*2, rgb_w*2:] = cam3
+    # collect into collage
+    collage_t = np.zeros((seg_h + rgb_h*2, seg_w * 2, 3))
+    collage_t[:seg_h, :seg_w] = seg_e
+    collage_t[:seg_h, seg_w:] = seg_g
+    collage_t[seg_h:seg_h+rgb_h, :rgb_w] = cam1
+    collage_t[seg_h:seg_h+rgb_h, rgb_w:rgb_w*2] = cam0
+    collage_t[seg_h:seg_h+rgb_h, rgb_w*2:] = cam2
+    collage_t[seg_h+rgb_h:seg_h+rgb_h*2, :rgb_w] = cam5
+    collage_t[seg_h+rgb_h:seg_h+rgb_h*2, rgb_w:rgb_w*2] = cam4
+    collage_t[seg_h+rgb_h:seg_h+rgb_h*2, rgb_w*2:] = cam3
 
-    collate_t_name = os.path.join(savefolder_name, "collate_%03d.png" % t)
-    imageio.imsave(collate_t_name, collate_t.astype(np.uint8))
+    collage_t_name = os.path.join(savefolder_name, "collage_%03d.png" % t)
+    imageio.imsave(collage_t_name, collage_t.astype(np.uint8))
