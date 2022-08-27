@@ -27,7 +27,26 @@ import utils.geom
 import itertools
 import matplotlib.pyplot as plt
 
+from lyft_dataset_sdk.lyftdataset import LyftDataset
+
 discard_invisible = False
+
+TRAIN_LYFT_INDICES = [1, 3, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16,
+                      17, 18, 19, 20, 21, 23, 24, 27, 28, 29, 30, 31, 32,
+                      33, 35, 36, 37, 39, 41, 43, 44, 45, 46, 47, 48, 49,
+                      50, 51, 52, 53, 55, 56, 59, 60, 62, 63, 65, 68, 69,
+                      70, 71, 72, 73, 74, 75, 76, 78, 79, 81, 82, 83, 84,
+                      86, 87, 88, 89, 93, 95, 97, 98, 99, 103, 104, 107, 108,
+                      109, 110, 111, 113, 114, 115, 116, 117, 118, 119, 121, 122, 124,
+                      127, 128, 130, 131, 132, 134, 135, 136, 137, 138, 139, 143, 144,
+                      146, 147, 148, 149, 150, 151, 152, 153, 154, 156, 157, 158, 159,
+                      161, 162, 165, 166, 167, 171, 172, 173, 174, 175, 176, 177, 178,
+                      179]
+
+VAL_LYFT_INDICES = [0, 2, 4, 13, 22, 25, 26, 34, 38, 40, 42, 54, 57,
+                    58, 61, 64, 66, 67, 77, 80, 85, 90, 91, 92, 94, 96,
+                    100, 101, 102, 105, 106, 112, 120, 123, 125, 126, 129, 133, 140,
+                    141, 142, 145, 155, 160, 163, 164, 168, 169, 170]
 
 def convert_egopose_to_matrix_numpy(egopose):
     transformation_matrix = np.zeros((4, 4), dtype=np.float32)
@@ -61,7 +80,7 @@ class LidarPointCloud(PointCloud):
         points = scan.reshape((-1, 5))[:, :cls.nbr_dims()]
         return cls(points.T)
 
-def get_lidar_data(nusc, sample_rec, nsweeps, min_distance):
+def get_lidar_data(nusc, sample_rec, nsweeps, min_distance, dataroot):
     """
     Returns at most nsweeps of lidar in the ego frame.
     Returned tensor is 5(x, y, z, reflectance, dt, ring_index) x N
@@ -86,7 +105,7 @@ def get_lidar_data(nusc, sample_rec, nsweeps, min_distance):
     current_sd_rec = nusc.get('sample_data', sample_data_token)
     for _ in range(nsweeps):
         # Load up the pointcloud and remove points close to the sensor.
-        current_pc = LidarPointCloud.from_file(os.path.join(nusc.dataroot, current_sd_rec['filename']))
+        current_pc = LidarPointCloud.from_file(os.path.join(dataroot, current_sd_rec['filename']))
         current_pc.remove_close(min_distance)
 
         # Get past pose.
@@ -121,7 +140,7 @@ def get_lidar_data(nusc, sample_rec, nsweeps, min_distance):
 
     return points
 
-def get_radar_data(nusc, sample_rec, nsweeps, min_distance, use_radar_filters):
+def get_radar_data(nusc, sample_rec, nsweeps, min_distance, use_radar_filters, dataroot):
     """
     Returns at most nsweeps of lidar in the ego frame.
     Returned tensor is 5(x, y, z, reflectance, dt, ring_index) x N
@@ -155,7 +174,7 @@ def get_radar_data(nusc, sample_rec, nsweeps, min_distance, use_radar_filters):
         current_sd_rec = nusc.get('sample_data', sample_data_token)
         for _ in range(nsweeps):
             # Load up the pointcloud and remove points close to the sensor.
-            current_pc = RadarPointCloud.from_file(os.path.join(nusc.dataroot, current_sd_rec['filename']))
+            current_pc = RadarPointCloud.from_file(os.path.join(dataroot, current_sd_rec['filename']))
             current_pc.remove_close(min_distance)
 
             # Get past pose.
@@ -565,6 +584,17 @@ class NuscData(torch.utils.data.Dataset):
 
         self.seqlen = seqlen
         self.refcam_id = refcam_id
+
+
+        self.is_lyft = isinstance(nusc, LyftDataset)
+
+        if self.is_lyft:
+            self.dataroot = self.nusc.data_path
+        else:
+            self.dataroot = self.dataroot
+                    
+
+        
         
         self.scenes = self.get_scenes()
         
@@ -596,12 +626,20 @@ class NuscData(torch.utils.data.Dataset):
         print(self)
     
     def get_scenes(self):
-        # filter by scene split
-        split = {
-            'v1.0-trainval': {True: 'train', False: 'val'},
-            'v1.0-mini': {True: 'mini_train', False: 'mini_val'},
-        }[self.nusc.version][self.is_train]
-        scenes = create_splits_scenes()[split]
+
+        if self.is_lyft:
+            scenes = [row['name'] for row in self.nusc.scene]
+            
+            # Split in train/val
+            indices = TRAIN_LYFT_INDICES if self.is_train else VAL_LYFT_INDICES
+            scenes = [scenes[i] for i in indices]
+        else:
+            # filter by scene split
+            split = {
+                'v1.0-trainval': {True: 'train', False: 'val'},
+                'v1.0-mini': {True: 'mini_train', False: 'mini_val'},
+            }[self.nusc.version][self.is_train]
+            scenes = create_splits_scenes()[split]
         return scenes
 
     def prepro(self):
@@ -724,7 +762,7 @@ class NuscData(torch.utils.data.Dataset):
         for cam in cams:
             samp = self.nusc.get('sample_data', rec['data'][cam])
             if include_rgbs:
-                imgname = os.path.join(self.nusc.dataroot, samp['filename'])
+                imgname = os.path.join(self.dataroot, samp['filename'])
                 img = Image.open(imgname)
 
             sens = self.nusc.get('calibrated_sensor', samp['calibrated_sensor_token'])
@@ -762,15 +800,18 @@ class NuscData(torch.utils.data.Dataset):
 
 
     def get_lidar_data(self, rec, nsweeps, include_extra=False):
-        pts = get_lidar_data(self.nusc, rec,
-                             nsweeps=nsweeps, min_distance=2.2)
-        if include_extra:
-            return torch.Tensor(pts)
-        else:
-            return torch.Tensor(pts)[:3]  # x,y,z
+        pts = get_lidar_data(self.nusc, rec, nsweeps=nsweeps, min_distance=2.2, dataroot=self.dataroot)
+        return pts
+        # if include_extra:
+        #     return torch.Tensor(pts)
+        # else:
+        #     return torch.Tensor(pts)[:3]  # x,y,z
 
     def get_radar_data(self, rec, nsweeps, include_extra=False):
-        pts = get_radar_data(self.nusc, rec, nsweeps=nsweeps, min_distance=2.2, use_radar_filters=self.use_radar_filters)
+        if self.is_lyft:
+            pts = np.zeros((3,100))
+        else:
+            pts = get_radar_data(self.nusc, rec, nsweeps=nsweeps, min_distance=2.2, use_radar_filters=self.use_radar_filters, dataroot=self.dataroot)
         return torch.Tensor(pts)
 
     def get_binimg(self, rec):
@@ -780,12 +821,19 @@ class NuscData(torch.utils.data.Dataset):
         img = np.zeros((self.nx[0], self.nx[1]))
         for ii, tok in enumerate(rec['anns']):
             inst = self.nusc.get('sample_annotation', tok)
-            # add category for lyft
-            if not inst['category_name'].split('.')[0] == 'vehicle':
-                continue
-            if discard_invisible and int(inst['visibility_token']) == 1:
-                # filter invisible vehicles
-                continue
+            
+            if not self.is_lyft:
+                # NuScenes filter
+                if 'vehicle' not in inst['category_name']:
+                    continue
+                if discard_invisible and int(inst['visibility_token']) == 1:
+                    # filter invisible vehicles
+                    continue
+            else:
+                # Lyft filter
+                if inst['category_name'] not in ['bus', 'car', 'construction_vehicle', 'trailer', 'truck']:
+                    continue
+                
             box = Box(inst['translation'], inst['size'], Quaternion(inst['rotation']))
             box.translate(trans)
             box.rotate(rot)
@@ -902,13 +950,20 @@ class NuscData(torch.utils.data.Dataset):
         tidlist = []
         for tok in rec['anns']:
             inst = self.nusc.get('sample_annotation', tok)
-            # add category for lyft
-            if not inst['category_name'].split('.')[0] == 'vehicle':
-                continue
-            if int(inst['visibility_token']) == 1:
-                vislist.append(torch.tensor(0.0)) # invisible
+            if not self.is_lyft:
+                # NuScenes filter
+                if 'vehicle' not in inst['category_name']:
+                    continue
+                if int(inst['visibility_token']) == 1:
+                    vislist.append(torch.tensor(0.0)) # invisible
+                else:
+                    vislist.append(torch.tensor(1.0)) # visible
             else:
+                # Lyft filter
+                if inst['category_name'] not in ['bus', 'car', 'construction_vehicle', 'trailer', 'truck']:
+                    continue
                 vislist.append(torch.tensor(1.0)) # visible
+                
             box = Box(inst['translation'], inst['size'], Quaternion(inst['rotation']))
             box.translate(trans)
             box.rotate(rot)
@@ -1044,6 +1099,7 @@ class VizData(NuscData):
         lrtlist[:N_] = lrtlist_
         vislist[:N_] = vislist_
         scorelist[:N_] = 1
+
         
         # lidar is shaped 3,V, where V~=26k 
         times = lidar_extra[2] # V
@@ -1055,9 +1111,13 @@ class VizData(NuscData):
         lidar0_extra = np.transpose(lidar0_extra)
         lidar_data = np.transpose(lidar_data)
         lidar_extra = np.transpose(lidar_extra)
-        V = 30000*self.nsweeps
+        if self.is_lyft:
+            V = 70000*self.nsweeps
+        else:
+            V = 30000*self.nsweeps
+            
         if lidar_data.shape[0] > V:
-            assert(False) # if this happens, it's probably better to increase V than to subsample as below
+            # assert(False) # if this happens, it's probably better to increase V than to subsample as below
             lidar0_data = lidar0_data[:V//self.nsweeps]
             lidar0_extra = lidar0_extra[:V//self.nsweeps]
             lidar_data = lidar_data[:V]
@@ -1084,11 +1144,11 @@ class VizData(NuscData):
             radar_data = np.pad(radar_data,[(0,V-radar_data.shape[0]),(0,0)],mode='constant')
         radar_data = np.transpose(radar_data)
 
-        lidar0_data = torch.from_numpy(lidar0_data)
-        lidar0_extra = torch.from_numpy(lidar0_extra)
-        lidar_data = torch.from_numpy(lidar_data)
-        lidar_extra = torch.from_numpy(lidar_extra)
-        radar_data = torch.from_numpy(radar_data)
+        lidar0_data = torch.from_numpy(lidar0_data).float()
+        lidar0_extra = torch.from_numpy(lidar0_extra).float()
+        lidar_data = torch.from_numpy(lidar_data).float()
+        lidar_extra = torch.from_numpy(lidar_extra).float()
+        radar_data = torch.from_numpy(radar_data).float()
 
         binimg = (binimg > 0).float()
         seg_bev = (seg_bev > 0).float()
@@ -1195,10 +1255,18 @@ def worker_rnd_init(x):
 def compile_data(version, dataroot, data_aug_conf, centroid, bounds, res_3d, bsz,
                  nworkers, shuffle=True, nsweeps=1, nworkers_val=1, include_extra=True, seqlen=1, refcam_id=1, get_tids=False,
                  include_rgbs=True, temporal_aug=False, use_radar_filters=False, do_shuffle_cams=True):
-    print('loading nuscenes...')
-    nusc = NuScenes(version='v1.0-{}'.format(version),
-                    dataroot=os.path.join(dataroot, version),
-                    verbose=False)
+
+    if 'lyft' in version:
+        print('loading lyft...')
+        dataroot = os.path.join(dataroot, 'trainval')
+        nusc = LyftDataset(data_path=dataroot,
+                           json_path=os.path.join(dataroot, 'train_data'),
+                           verbose=True)
+    else:
+        print('loading nuscenes...')
+        nusc = NuScenes(version='v1.0-{}'.format(version),
+                        dataroot=os.path.join(dataroot, version),
+                        verbose=False)
     print('making parser...')
     traindata = VizData(
         nusc,
