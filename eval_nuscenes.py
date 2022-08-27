@@ -332,7 +332,8 @@ def main(
         bounds=bounds,
         res_3d=(Z,Y,X),
         bsz=B,
-        nworkers=nworkers,
+        nworkers=1,
+        nworkers_val=nworkers,
         shuffle=shuffle,
         use_radar_filters=use_radar_filters,
         seqlen=1, # we do not load a temporal sequence here, but that can work with this dataloader
