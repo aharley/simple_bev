@@ -591,7 +591,7 @@ class NuscData(torch.utils.data.Dataset):
         if self.is_lyft:
             self.dataroot = self.nusc.data_path
         else:
-            self.dataroot = self.dataroot
+            self.dataroot = self.nusc.dataroot
                     
 
         
