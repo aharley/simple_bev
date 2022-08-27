@@ -800,7 +800,10 @@ class NuscData(torch.utils.data.Dataset):
 
 
     def get_lidar_data(self, rec, nsweeps, include_extra=False):
-        pts = get_lidar_data(self.nusc, rec, nsweeps=nsweeps, min_distance=2.2, dataroot=self.dataroot)
+        if self.is_lyft:
+            pts = np.zeros((6,100))
+        else:
+            pts = get_lidar_data(self.nusc, rec, nsweeps=nsweeps, min_distance=2.2, dataroot=self.dataroot)
         return pts
         # if include_extra:
         #     return torch.Tensor(pts)
@@ -883,7 +886,7 @@ class NuscData(torch.utils.data.Dataset):
         assert(B==1)
 
         lrtlist_mem = self.vox_util.apply_mem_T_ref_to_lrtlist(
-            lrtlist_cam.clone(), self.Z, self.Y, self.X)
+            lrtlist_cam, self.Z, self.Y, self.X)
         clist_cam = utils.geom.get_clist_from_lrtlist(lrtlist_cam)
         lenlist, rtlist = utils.geom.split_lrtlist(lrtlist_cam) # B,N,3
         rlist_, tlist_ = utils.geom.split_rt(rtlist.reshape(B*N, 4, 4))
@@ -1034,32 +1037,36 @@ class VizData(NuscData):
         imgs, rots, trans, intrins = self.get_image_data(rec, cams, include_rgbs=self.include_rgbs)
         lidar_data = self.get_lidar_data(rec, nsweeps=self.nsweeps, include_extra=self.include_extra)
         binimg, egopose = self.get_binimg(rec)
-
+        # print('lidar_data', lidar_data.shape)
+        
         if refcam_id is None:
             if self.is_train:
                 # randomly sample the ref cam
                 refcam_id = np.random.randint(1, len(cams))
             else:
                 refcam_id = self.refcam_id
-            
-        imgs_ = imgs.clone()
-        rots_ = rots.clone()
-        trans_ = trans.clone()
-        intrins_ = intrins.clone()
 
         # move the target refcam_id to the zeroth slot
-        imgs[0] = imgs_[refcam_id].clone()
-        imgs[refcam_id] = imgs_[0].clone()
+        img_ref = imgs[refcam_id].clone()
+        img_0 = imgs[0].clone()
+        imgs[0] = img_ref
+        imgs[refcam_id] = img_0
 
-        rots[0] = rots_[refcam_id].clone()
-        rots[refcam_id] = rots_[0].clone()
+        rot_ref = rots[refcam_id].clone()
+        rot_0 = rots[0].clone()
+        rots[0] = rot_ref
+        rots[refcam_id] = rot_0
+        
+        tran_ref = trans[refcam_id].clone()
+        tran_0 = trans[0].clone()
+        trans[0] = tran_ref
+        trans[refcam_id] = tran_0
 
-        trans[0] = trans_[refcam_id].clone()
-        trans[refcam_id] = trans_[0].clone()
-
-        intrins[0] = intrins_[refcam_id].clone()
-        intrins[refcam_id] = intrins_[0].clone()
-
+        intrin_ref = intrins[refcam_id].clone()
+        intrin_0 = intrins[0].clone()
+        intrins[0] = intrin_ref
+        intrins[refcam_id] = intrin_0
+        
         radar_data = self.get_radar_data(rec, nsweeps=self.nsweeps)
 
         if self.include_extra:
