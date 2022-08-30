@@ -288,7 +288,7 @@ class Vox_util(object):
         # B x C x Z x Y x X
         return feat_voxels
 
-    def unproject_image_to_mem(self, rgb_camB, pixB_T_camA, camB_T_camA, Z, Y, X, assert_cube=False):
+    def unproject_image_to_mem(self, rgb_camB, pixB_T_camA, camB_T_camA, Z, Y, X, assert_cube=False, xyz_camA=None):
         # rgb_camB is B x C x H x W
         # pixB_T_camA is B x 4 x 4
 
@@ -299,9 +299,9 @@ class Vox_util(object):
         # along a ray in the voxelgrid
         B, C, H, W = list(rgb_camB.shape)
 
-        xyz_memA = utils.basic.gridcloud3d(B, Z, Y, X, norm=False, device=pixB_T_camA.device)
-
-        xyz_camA = self.Mem2Ref(xyz_memA, Z, Y, X, assert_cube=assert_cube)
+        if xyz_camA is None:
+            xyz_memA = utils.basic.gridcloud3d(B, Z, Y, X, norm=False, device=pixB_T_camA.device)
+            xyz_camA = self.Mem2Ref(xyz_memA, Z, Y, X, assert_cube=assert_cube)
 
         xyz_camB = utils.geom.apply_4x4(camB_T_camA, xyz_camA)
         z = xyz_camB[:,:,2]
