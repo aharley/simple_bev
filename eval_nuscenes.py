@@ -319,7 +319,6 @@ def main(
     
     data_aug_conf = {
         'final_dim': final_dim,
-        'H': 900, 'W': 1600,
         'cams': ['CAM_FRONT_LEFT', 'CAM_FRONT', 'CAM_FRONT_RIGHT',
                  'CAM_BACK_LEFT', 'CAM_BACK', 'CAM_BACK_RIGHT'],
         'ncams': ncams,
@@ -343,11 +342,17 @@ def main(
     )
     val_iterloader = iter(val_dataloader)
 
+    vox_util = utils.vox.Vox_util(
+        Z, Y, X,
+        scene_centroid=scene_centroid.to(device),
+        bounds=bounds,
+        assert_cube=False)
+    
     max_iters = len(val_dataloader) # determine iters by length of dataset
 
     # set up model & seg loss
     seg_loss_fn = SimpleLoss(2.13).to(device)
-    model = Segnet(Z, Y, X, use_radar=use_radar, use_lidar=use_lidar, use_metaradar=use_metaradar, do_rgbcompress=do_rgbcompress, encoder_type=encoder_type)
+    model = Segnet(Z, Y, X, vox_util, use_radar=use_radar, use_lidar=use_lidar, use_metaradar=use_metaradar, do_rgbcompress=do_rgbcompress, encoder_type=encoder_type)
     model = model.to(device)
     model = torch.nn.DataParallel(model, device_ids=device_ids)
     parameters = list(model.parameters())
