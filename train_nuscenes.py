@@ -351,9 +351,15 @@ def main(
     train_iterloader = iter(train_dataloader)
     val_iterloader = iter(val_dataloader)
 
+    vox_util = utils.vox.Vox_util(
+        Z, Y, X,
+        scene_centroid=scene_centroid.to(device),
+        bounds=bounds,
+        assert_cube=False)
+
     # set up model & seg loss
     seg_loss_fn = SimpleLoss(2.13).to(device) # value from lift-splat
-    model = Segnet(Z, Y, X, use_radar=use_radar, use_lidar=use_lidar, use_metaradar=use_metaradar, do_rgbcompress=do_rgbcompress, encoder_type=encoder_type, rand_flip=rand_flip)
+    model = Segnet(Z, Y, X, vox_util, use_radar=use_radar, use_lidar=use_lidar, use_metaradar=use_metaradar, do_rgbcompress=do_rgbcompress, encoder_type=encoder_type, rand_flip=rand_flip)
     model = model.to(device)
     model = torch.nn.DataParallel(model, device_ids=device_ids)
     parameters = list(model.parameters())

@@ -286,7 +286,7 @@ class Encoder_eff(nn.Module):
         return x
 
 class Segnet(nn.Module):
-    def __init__(self, Z, Y, X, 
+    def __init__(self, Z, Y, X, vox_util=None, 
                  use_radar=False,
                  use_lidar=False,
                  use_metaradar=False,
@@ -365,6 +365,12 @@ class Segnet(nn.Module):
         self.offset_weight = nn.Parameter(torch.tensor(0.0), requires_grad=True)
             
         # set_bn_momentum(self, 0.1)
+
+        if vox_util is not None:
+            self.xyz_memA = utils.basic.gridcloud3d(1, Z, Y, X, norm=False)
+            self.xyz_camA = vox_util.Mem2Ref(self.xyz_memA, Z, Y, X, assert_cube=False)
+        else:
+            self.xyz_camA = None
         
     def forward(self, rgb_camXs, pix_T_cams, cam0_T_camXs, vox_util, rad_occ_mem0=None):
         '''
@@ -407,10 +413,15 @@ class Segnet(nn.Module):
 
         # unproject image feature to 3d grid
         featpix_T_cams_ = utils.geom.scale_intrinsics(pix_T_cams_, sx, sy)
+        if self.xyz_camA is not None:
+            xyz_camA = self.xyz_camA.to(feat_camXs_.device).repeat(B*S,1,1)
+        else:
+            xyz_camA = None
         feat_mems_ = vox_util.unproject_image_to_mem(
             feat_camXs_,
             utils.basic.matmul2(featpix_T_cams_, camXs_T_cam0_),
-            camXs_T_cam0_, Z, Y, X)
+            camXs_T_cam0_, Z, Y, X,
+            xyz_camA=xyz_camA)
         feat_mems = __u(feat_mems_) # B, S, C, Z, Y, X
 
         mask_mems = (torch.abs(feat_mems) > 0).float()
