@@ -1,4 +1,4 @@
-# A Simple Baseline for BEV Perception Without LiDAR
+# Simple-BEV: What Really Matters for Multi-Sensor BEV Perception?
 
 This is the official code release for our arXiv paper on BEV perception. 
 
