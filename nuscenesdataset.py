@@ -725,7 +725,6 @@ class NuscData(torch.utils.data.Dataset):
         return np.asarray(indices)
     
     def sample_augmentation(self):
-        H, W = self.data_aug_conf['H'], self.data_aug_conf['W']
         fH, fW = self.data_aug_conf['final_dim']
         if self.is_train:
             if 'resize_lim' in self.data_aug_conf and self.data_aug_conf['resize_lim'] is not None:
@@ -761,9 +760,10 @@ class NuscData(torch.utils.data.Dataset):
         intrins = []
         for cam in cams:
             samp = self.nusc.get('sample_data', rec['data'][cam])
-            if include_rgbs:
-                imgname = os.path.join(self.dataroot, samp['filename'])
-                img = Image.open(imgname)
+            
+            imgname = os.path.join(self.dataroot, samp['filename'])
+            img = Image.open(imgname)
+            W, H = img.size
 
             sens = self.nusc.get('calibrated_sensor', samp['calibrated_sensor_token'])
             intrin = torch.Tensor(sens['camera_intrinsic'])
@@ -772,7 +772,6 @@ class NuscData(torch.utils.data.Dataset):
 
             resize_dims, crop = self.sample_augmentation()
 
-            H, W = self.data_aug_conf['H'], self.data_aug_conf['W']
             sx = resize_dims[0]/float(W)
             sy = resize_dims[1]/float(H)
 
