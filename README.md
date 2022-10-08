@@ -172,7 +172,7 @@ In this project's context, we often need something like this:
 
 If you use this code for your research, please cite:
 
-**A Simple Baseline for BEV Perception Without LiDAR**.
+**Simple-BEV: What Really Matters for Multi-Sensor BEV Perception?**.
 [Adam W. Harley](https://adamharley.com/),
 [Zhaoyuan Fang](https://zfang399.github.io/),
 [Jie Li](https://www.tri.global/about-us/jie-li/),
@@ -182,7 +182,7 @@ If you use this code for your research, please cite:
 Bibtex:
 ```
 @inproceedings{harley2022simple,
-  title={A Simple Baseline for BEV Perception Without LiDAR},
+  title={Simple-{BEV}: What Really Matters for Multi-Sensor BEV Perception?},
   author={Adam W. Harley and Zhaoyuan Fang and Jie Li and Rares Ambrus and Katerina Fragkiadaki},
   booktitle={arXiv:2206.07959},
   year={2022}
