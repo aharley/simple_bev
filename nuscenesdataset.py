@@ -568,13 +568,12 @@ def get_local_map(nmap, center, stretch, layer_names, line_names):
 
 
 class NuscData(torch.utils.data.Dataset):
-    def __init__(self, nusc, is_train, data_aug_conf, centroid=None, bounds=None, res_3d=None, nsweeps=1, seqlen=1, refcam_id=1, include_rgbs=True, get_tids=False, temporal_aug=False, use_radar_filters=False, do_shuffle_cams=True):
+    def __init__(self, nusc, is_train, data_aug_conf, centroid=None, bounds=None, res_3d=None, nsweeps=1, seqlen=1, refcam_id=1, get_tids=False, temporal_aug=False, use_radar_filters=False, do_shuffle_cams=True):
         self.nusc = nusc
         self.is_train = is_train
         self.data_aug_conf = data_aug_conf
         # self.grid_conf = grid_conf
         self.nsweeps = nsweeps
-        self.include_rgbs = include_rgbs
         self.use_radar_filters = use_radar_filters
         self.do_shuffle_cams = do_shuffle_cams
         self.res_3d = res_3d
@@ -752,7 +751,7 @@ class NuscData(torch.utils.data.Dataset):
             crop = (crop_w, crop_h, crop_w + fW, crop_h + fH)
         return resize_dims, crop
 
-    def get_image_data(self, rec, cams, include_rgbs=True):
+    def get_image_data(self, rec, cams):
         imgs = []
         rots = []
         trans = []
@@ -784,12 +783,8 @@ class NuscData(torch.utils.data.Dataset):
             pix_T_cam = utils.geom.merge_intrinsics(fx, fy, new_x0, new_y0)
             intrin = pix_T_cam.squeeze(0)
 
-            if include_rgbs:
-                img = img_transform(img, resize_dims, crop)
-                imgs.append(totorch_img(img))
-            else:
-                newW, newH = resize_dims
-                imgs.append(torch.zeros((3, newH, newW), dtype=torch.float32))
+            img = img_transform(img, resize_dims, crop)
+            imgs.append(totorch_img(img))
 
             intrins.append(intrin)
             rots.append(rot)
@@ -1028,7 +1023,7 @@ class VizData(NuscData):
         # print('index %d; cam_id' % index, cam_id)
         rec = self.ixes[index]
         
-        imgs, rots, trans, intrins = self.get_image_data(rec, cams, include_rgbs=self.include_rgbs)
+        imgs, rots, trans, intrins = self.get_image_data(rec, cams)
         lidar_data = self.get_lidar_data(rec, nsweeps=self.nsweeps)
         binimg, egopose = self.get_binimg(rec)
         # print('lidar_data', lidar_data.shape)
@@ -1251,7 +1246,7 @@ def worker_rnd_init(x):
 
 def compile_data(version, dataroot, data_aug_conf, centroid, bounds, res_3d, bsz,
                  nworkers, shuffle=True, nsweeps=1, nworkers_val=1, seqlen=1, refcam_id=1, get_tids=False,
-                 include_rgbs=True, temporal_aug=False, use_radar_filters=False, do_shuffle_cams=True):
+                 temporal_aug=False, use_radar_filters=False, do_shuffle_cams=True):
 
     if 'lyft' in version:
         print('loading lyft...')
@@ -1275,7 +1270,6 @@ def compile_data(version, dataroot, data_aug_conf, centroid, bounds, res_3d, bsz
         res_3d=res_3d,
         seqlen=seqlen,
         refcam_id=refcam_id,
-        include_rgbs=include_rgbs,
         get_tids=get_tids,
         temporal_aug=temporal_aug,
         use_radar_filters=use_radar_filters,
@@ -1290,7 +1284,6 @@ def compile_data(version, dataroot, data_aug_conf, centroid, bounds, res_3d, bsz
         res_3d=res_3d,
         seqlen=seqlen,
         refcam_id=refcam_id,
-        include_rgbs=include_rgbs,
         get_tids=get_tids,
         temporal_aug=False,
         use_radar_filters=use_radar_filters,
