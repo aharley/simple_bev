@@ -20,7 +20,7 @@ from nuscenes.utils.data_classes import RadarPointCloud
 from nuscenes.utils.data_classes import PointCloud
 from nuscenes.utils.geometry_utils import transform_matrix
 from nuscenes.map_expansion.map_api import NuScenesMap
-from time import time
+import time
 
 import utils.py
 import utils.geom
@@ -252,7 +252,7 @@ def get_rot(h):
 
 
 def img_transform(img, resize_dims, crop):
-    img = img.resize(resize_dims)
+    img = img.resize(resize_dims, Image.NEAREST)
     img = img.crop(crop)
     return img
 
@@ -758,7 +758,7 @@ class NuscData(torch.utils.data.Dataset):
         intrins = []
         for cam in cams:
             samp = self.nusc.get('sample_data', rec['data'][cam])
-            
+
             imgname = os.path.join(self.dataroot, samp['filename'])
             img = Image.open(imgname)
             W, H = img.size
@@ -789,6 +789,8 @@ class NuscData(torch.utils.data.Dataset):
             intrins.append(intrin)
             rots.append(rot)
             trans.append(tran)
+
+            
         return (torch.stack(imgs), torch.stack(rots), torch.stack(trans),torch.stack(intrins))
 
 
@@ -842,6 +844,7 @@ class NuscData(torch.utils.data.Dataset):
     def get_seg_bev(self, lrtlist_cam, vislist):
         B, N, D = lrtlist_cam.shape
         assert(B==1)
+
         seg = np.zeros((self.Z, self.X))
         val = np.ones((self.Z, self.X))
 
@@ -852,7 +855,7 @@ class NuscData(torch.utils.data.Dataset):
         # take the xz part
         corners_mem = torch.stack([corners_mem[:,:,:,0], corners_mem[:,:,:,2]], dim=3) # B, N, 8, 2
         # corners_mem = corners_mem[:,:,:4] # take the bottom four
-        
+
         for n in range(N):
             _, inds = torch.topk(y_cam[0,n], 4, largest=False)
             pts = corners_mem[0,n,inds].numpy().astype(np.int32) # 4, 2
@@ -886,15 +889,9 @@ class NuscData(torch.utils.data.Dataset):
 
         rylist = torch.atan2(x_rot[:, 0], x_rot[:, 2]).reshape(N)
         rylist = utils.geom.wrap2pi(rylist + np.pi/2.0)
-        
-        if False:
-            # these are B x N x 3
-            sizelist = (torch.max(lenlist, dim=2)[0]).clamp(min=2)
-            sizelist = sizelist.clamp(min=4)
-            radius = sizelist/4.0
-        else:
-            radius = 3
-        center, offset = self.vox_util.xyz2circles(clist_cam, radius, self.Z, self.Y, self.X, soft=True, already_mem=False, also_offset=True)
+
+        radius = 3
+        center, offset = self.vox_util.xyz2circles_bev(clist_cam, radius, self.Z, self.Y, self.X, already_mem=False, also_offset=True)
 
         masklist = torch.zeros((1, N, 1, self.Z, 1, self.X), dtype=torch.float32)
         for n in range(N):
@@ -918,18 +915,17 @@ class NuscData(torch.utils.data.Dataset):
             inst = (seg_bev==(n+1)).float() # 1, Z, X
             inst = inst.reshape(self.Z, self.X) > 0.01
             ycoord_bev[0,:,inst] = tlist_[n,1] # y part
-            
-        offset = offset * masklist
 
+        offset = offset * masklist
         offset = torch.sum(offset, dim=1) # B,3,Z,Y,X
-        
-        offset = torch.stack([offset[:,0], offset[:,2]], dim=1) # B,2,Z,Y,X, containing the xz offset
+
         min_offset = torch.min(offset, dim=3)[0] # B,2,Z,X
         max_offset = torch.max(offset, dim=3)[0] # B,2,Z,X
         offset = min_offset + max_offset
         
         center = torch.max(center, dim=1, keepdim=True)[0] # B,1,Z,Y,X
         center = torch.max(center, dim=3)[0] # max along Y; 1,Z,X
+        
         return center.squeeze(0), offset.squeeze(0), size_bev.squeeze(0), ry_bev.squeeze(0), ycoord_bev.squeeze(0) # 1,Z,X; 2,Z,X; 3,Z,X; 1,Z,X
 
     def get_lrtlist(self, rec):
@@ -1022,11 +1018,10 @@ class VizData(NuscData):
     def get_single_item(self, index, cams, refcam_id=None):
         # print('index %d; cam_id' % index, cam_id)
         rec = self.ixes[index]
-        
+
         imgs, rots, trans, intrins = self.get_image_data(rec, cams)
         lidar_data = self.get_lidar_data(rec, nsweeps=self.nsweeps)
         binimg, egopose = self.get_binimg(rec)
-        # print('lidar_data', lidar_data.shape)
         
         if refcam_id is None:
             if self.is_train:
@@ -1093,7 +1088,6 @@ class VizData(NuscData):
         vislist[:N_] = vislist_
         scorelist[:N_] = 1
 
-        
         # lidar is shaped 3,V, where V~=26k 
         times = lidar_extra[2] # V
         inds = times==times[0]
@@ -1145,7 +1139,7 @@ class VizData(NuscData):
 
         binimg = (binimg > 0).float()
         seg_bev = (seg_bev > 0).float()
-        
+
         if self.get_tids:
             return imgs, rots, trans, intrins, lidar0_data, lidar0_extra, lidar_data, lidar_extra, lrtlist, vislist, tidlist_, scorelist, seg_bev, valid_bev, center_bev, offset_bev, size_bev, ry_bev, ycoord_bev, radar_data, egopose
         else:

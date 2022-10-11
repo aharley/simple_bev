@@ -396,7 +396,7 @@ class Vox_util(object):
         assert(C==19)
         mem_T_cam = self.get_mem_T_ref(B, Z, Y, X, assert_cube=assert_cube, device=lrtlist_cam.device)
 
-    def xyz2circles(self, xyz, radius, Z, Y, X, soft=True, already_mem=True, also_offset=False):
+    def xyz2circles(self, xyz, radius, Z, Y, X, soft=True, already_mem=True, also_offset=False, grid=None):
         # xyz is B x N x 3
         # radius is B x N or broadcastably so
         # output is B x N x Z x Y x X
@@ -404,10 +404,13 @@ class Vox_util(object):
         assert(D==3)
         if not already_mem:
             xyz = self.Ref2Mem(xyz, Z, Y, X)
-        grid_z, grid_y, grid_x = utils.basic.meshgrid3d(B, Z, Y, X, stack=False, norm=False, device=xyz.device)
-        # note the default stack is on -1
-        grid = torch.stack([grid_x, grid_y, grid_z], dim=1)
-        # this is B x 3 x Z x Y x X
+
+        if grid is None:
+            grid_z, grid_y, grid_x = utils.basic.meshgrid3d(B, Z, Y, X, stack=False, norm=False, device=xyz.device)
+            # note the default stack is on -1
+            grid = torch.stack([grid_x, grid_y, grid_z], dim=1)
+            # this is B x 3 x Z x Y x X
+            
         xyz = xyz.reshape(B, N, 3, 1, 1, 1)
         grid = grid.reshape(B, 1, 3, Z, Y, X)
         # this is B x N x Z x Y x X
@@ -447,3 +450,51 @@ class Vox_util(object):
             within_radius_mask = (dist_grid < radius).float()
             within_radius_mask = torch.sum(within_radius_mask, dim=1, keepdim=True).clamp(0, 1)
             return within_radius_mask
+
+    def xyz2circles_bev(self, xyz, radius, Z, Y, X, already_mem=True, also_offset=False):
+        # xyz is B x N x 3
+        # radius is B x N or broadcastably so
+        # output is B x N x Z x Y x X
+        B, N, D = list(xyz.shape)
+        assert(D==3)
+        if not already_mem:
+            xyz = self.Ref2Mem(xyz, Z, Y, X)
+
+        xz = torch.stack([xyz[:,:,0], xyz[:,:,2]], dim=2)
+
+        grid_z, grid_x = utils.basic.meshgrid2d(B, Z, X, stack=False, norm=False, device=xyz.device)
+        # note the default stack is on -1
+        grid = torch.stack([grid_x, grid_z], dim=1)
+        # this is B x 2 x Z x X
+
+        xz = xz.reshape(B, N, 2, 1, 1)
+        grid = grid.reshape(B, 1, 2, Z, X)
+        # these are ready to broadcast to B x N x Z x X
+
+        # round the points, so that at least one value matches the grid perfectly,
+        # and we get a value of 1 there (since exp(0)==1)
+        xz = xz.round()
+
+        if torch.is_tensor(radius):
+            radius = radius.clamp(min=0.01)
+
+        off = grid - xz # B,N,2,Z,X
+        # interpret radius as sigma
+        dist_grid = torch.sum(off**2, dim=2, keepdim=False)
+        # this is B x N x Z x X
+        if torch.is_tensor(radius):
+            radius = radius.reshape(B, N, 1, 1, 1)
+        mask = torch.exp(-dist_grid/(2*radius*radius))
+        # zero out near zero
+        mask[mask < 0.001] = 0.0
+        
+        # add a Y dim
+        mask = mask.unsqueeze(-2)
+        off = off.unsqueeze(-2)
+        # # B,N,2,Z,1,X
+        
+        if also_offset:
+            return mask, off
+        else:
+            return mask
+        
