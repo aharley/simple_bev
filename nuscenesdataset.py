@@ -568,13 +568,12 @@ def get_local_map(nmap, center, stretch, layer_names, line_names):
 
 
 class NuscData(torch.utils.data.Dataset):
-    def __init__(self, nusc, is_train, data_aug_conf, centroid=None, bounds=None, res_3d=None, nsweeps=1, include_extra=False, seqlen=1, refcam_id=1, include_rgbs=True, get_tids=False, temporal_aug=False, use_radar_filters=False, do_shuffle_cams=True):
+    def __init__(self, nusc, is_train, data_aug_conf, centroid=None, bounds=None, res_3d=None, nsweeps=1, seqlen=1, refcam_id=1, include_rgbs=True, get_tids=False, temporal_aug=False, use_radar_filters=False, do_shuffle_cams=True):
         self.nusc = nusc
         self.is_train = is_train
         self.data_aug_conf = data_aug_conf
         # self.grid_conf = grid_conf
         self.nsweeps = nsweeps
-        self.include_extra = include_extra
         self.include_rgbs = include_rgbs
         self.use_radar_filters = use_radar_filters
         self.do_shuffle_cams = do_shuffle_cams
@@ -798,18 +797,14 @@ class NuscData(torch.utils.data.Dataset):
         return (torch.stack(imgs), torch.stack(rots), torch.stack(trans),torch.stack(intrins))
 
 
-    def get_lidar_data(self, rec, nsweeps, include_extra=False):
+    def get_lidar_data(self, rec, nsweeps):
         if self.is_lyft:
             pts = np.zeros((6,100))
         else:
             pts = get_lidar_data(self.nusc, rec, nsweeps=nsweeps, min_distance=2.2, dataroot=self.dataroot)
         return pts
-        # if include_extra:
-        #     return torch.Tensor(pts)
-        # else:
-        #     return torch.Tensor(pts)[:3]  # x,y,z
 
-    def get_radar_data(self, rec, nsweeps, include_extra=False):
+    def get_radar_data(self, rec, nsweeps):
         if self.is_lyft:
             pts = np.zeros((3,100))
         else:
@@ -1034,7 +1029,7 @@ class VizData(NuscData):
         rec = self.ixes[index]
         
         imgs, rots, trans, intrins = self.get_image_data(rec, cams, include_rgbs=self.include_rgbs)
-        lidar_data = self.get_lidar_data(rec, nsweeps=self.nsweeps, include_extra=self.include_extra)
+        lidar_data = self.get_lidar_data(rec, nsweeps=self.nsweeps)
         binimg, egopose = self.get_binimg(rec)
         # print('lidar_data', lidar_data.shape)
         
@@ -1068,11 +1063,8 @@ class VizData(NuscData):
         
         radar_data = self.get_radar_data(rec, nsweeps=self.nsweeps)
 
-        if self.include_extra:
-            lidar_extra = lidar_data[3:]
-            lidar_data = lidar_data[:3]
-        else:
-            lidar_extra = lidar_data[:2]*0
+        lidar_extra = lidar_data[3:]
+        lidar_data = lidar_data[:3]
 
         lrtlist_, boxlist_, vislist_, tidlist_ = self.get_lrtlist(rec)
         N_ = lrtlist_.shape[0]
@@ -1159,7 +1151,6 @@ class VizData(NuscData):
         binimg = (binimg > 0).float()
         seg_bev = (seg_bev > 0).float()
         
-        # if self.include_extra:
         if self.get_tids:
             return imgs, rots, trans, intrins, lidar0_data, lidar0_extra, lidar_data, lidar_extra, lrtlist, vislist, tidlist_, scorelist, seg_bev, valid_bev, center_bev, offset_bev, size_bev, ry_bev, ycoord_bev, radar_data, egopose
         else:
@@ -1259,7 +1250,7 @@ def worker_rnd_init(x):
 
 
 def compile_data(version, dataroot, data_aug_conf, centroid, bounds, res_3d, bsz,
-                 nworkers, shuffle=True, nsweeps=1, nworkers_val=1, include_extra=True, seqlen=1, refcam_id=1, get_tids=False,
+                 nworkers, shuffle=True, nsweeps=1, nworkers_val=1, seqlen=1, refcam_id=1, get_tids=False,
                  include_rgbs=True, temporal_aug=False, use_radar_filters=False, do_shuffle_cams=True):
 
     if 'lyft' in version:
@@ -1282,7 +1273,6 @@ def compile_data(version, dataroot, data_aug_conf, centroid, bounds, res_3d, bsz
         centroid=centroid,
         bounds=bounds,
         res_3d=res_3d,
-        include_extra=include_extra,
         seqlen=seqlen,
         refcam_id=refcam_id,
         include_rgbs=include_rgbs,
@@ -1298,7 +1288,6 @@ def compile_data(version, dataroot, data_aug_conf, centroid, bounds, res_3d, bsz
         centroid=centroid,
         bounds=bounds,
         res_3d=res_3d,
-        include_extra=include_extra,
         seqlen=seqlen,
         refcam_id=refcam_id,
         include_rgbs=include_rgbs,
