@@ -29,7 +29,7 @@ To download a pre-trained camera-only model, run this:
 ```
 sh get_rgb_model.sh
 ```
-When evaluated at `res_scale=2` (`448x800`), this model should show a final trainval mean IOU of `47.6`, which is higher than the number in our arXiv paper (`47.0`). 
+When evaluated at `res_scale=2` (`448x800`), this model should show a final trainval mean IOU of `47.6`, which is higher than the number in our arXiv paper (`47.4`). 
 
 To download a pre-trained camera-plus-radar model, run this:
 
