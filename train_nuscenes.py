@@ -255,7 +255,7 @@ def main(
         batch_size=8,
         grad_acc=5,
         lr=3e-4,
-        use_scheduler=False,
+        use_scheduler=True,
         weight_decay=1e-7,
         nworkers=12,
         # data/log/save/load directories

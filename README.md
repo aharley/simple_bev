@@ -38,9 +38,7 @@ sh get_rad_model.sh
 ```
 When evaluated at `res_scale=2` (`448x800`) and `nsweeps=5`, this model should show a final trainval mean IOU of `55.8`, which is slightly higher than the number in our arXiv paper (`55.7`).
 
-The main improvement since writing the arXiv paper is the addition of a learning rate scheduler, which you can activate with `use_scheduler=True` when training.
-
-Note there is also some variance across training runs, which alters results by +-0.1 IOU. It should be possible to cherry-pick checkpoints along the training process, but we recommend to pick `max_iters` and just report the final number (as we have done).  
+Note there is some variance across training runs, which alters results by +-0.1 IOU. It should be possible to cherry-pick checkpoints along the training process, but we recommend to pick `max_iters` and just report the final number (as we have done).  
 
 ## Training
 
