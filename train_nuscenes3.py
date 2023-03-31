@@ -5,7 +5,7 @@ import numpy as np
 import saverloader
 from fire import Fire
 # from nets.segnet import Segnet
-from nets.segnet2 import Segnet
+from nets.segnet3 import Segnet
 # from nets.bevformernet2 import Bevformernet
 from nets.bevformernet3 import Bevformernet
 import utils.misc
@@ -162,18 +162,24 @@ def run_model(model, loss_fn, d, device='cuda:0', sw=None):
     rad_occ_mem0 = vox_util.voxelize_xyz(rad_xyz_cam0, Z, Y, X, assert_cube=False)
     metarad_occ_mem0 = vox_util.voxelize_xyz_and_feats(rad_xyz_cam0, meta_rad, Z, Y, X, assert_cube=False)
 
-    if not (model.module.use_radar or model.module.use_lidar):
-        in_occ_mem0 = None
-    elif model.module.use_lidar:
-        assert(model.module.use_radar==False) # either lidar or radar, not both
-        assert(model.module.use_metaradar==False) # either lidar or radar, not both
-        in_occ_mem0 = occ_mem0
-    elif model.module.use_radar and model.module.use_metaradar:
-        in_occ_mem0 = metarad_occ_mem0
-    elif model.module.use_radar:
-        in_occ_mem0 = rad_occ_mem0
-    elif model.module.use_metaradar:
-        assert(False) # cannot use_metaradar without use_radar
+    assert(model.module.use_radar==True)
+    assert(model.module.use_metaradar==True)
+    assert(model.module.use_lidar==True)
+
+    # for segnet3 just use metarad
+    in_occ_mem0 = metarad_occ_mem0
+    
+    # if not (model.module.use_radar or model.module.use_lidar):
+    #     in_occ_mem0 = None
+    # elif model.module.use_lidar:
+    #     assert(model.module.use_radar==False) # either lidar or radar, not both
+    #     assert(model.module.use_metaradar==False) # either lidar or radar, not both
+    # elif model.module.use_radar and model.module.use_metaradar:
+    #     in_occ_mem0 = metarad_occ_mem0
+    # elif model.module.use_radar:
+    #     in_occ_mem0 = rad_occ_mem0
+    # elif model.module.use_metaradar:
+    #     assert(False) # cannot use_metaradar without use_radar
 
     cam0_T_camXs = cam0_T_camXs
 

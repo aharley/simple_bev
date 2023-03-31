@@ -168,15 +168,15 @@ class Encoder_res101(nn.Module):
         self.upsampling_layer = UpsamplingConcat(1536, 512)
 
     def forward(self, x):
-        print('x in', x.shape)
+        # print('x in', x.shape)
         x1 = self.backbone(x) # /8
-        print('x1', x1.shape)
+        # print('x1', x1.shape)
         x2 = self.layer3(x1) # /
-        print('x2', x2.shape)
+        # print('x2', x2.shape)
         x = self.upsampling_layer(x2, x1)
-        print('x up', x.shape)
+        # print('x up', x.shape)
         x = self.depth_layer(x)
-        print('x d', x.shape)
+        # print('x d', x.shape)
         return x
 
 class Encoder_res50(nn.Module):
@@ -324,37 +324,42 @@ class Segnet(nn.Module):
         else:
             # effb4
             self.encoder = Encoder_eff(feat2d_dim, version='b4')
-
+            
         # BEV compressor
-        if self.use_radar:
-            if self.use_metaradar:
-                self.bev_compressor = nn.Sequential(
-                    nn.Conv2d(feat2d_dim*Y + 16*Y, feat2d_dim, kernel_size=3, padding=1, stride=1, bias=False),
-                    nn.InstanceNorm2d(latent_dim),
-                    nn.GELU(),
-                )
-            else:
-                self.bev_compressor = nn.Sequential(
-                    nn.Conv2d(feat2d_dim*Y+1, feat2d_dim, kernel_size=3, padding=1, stride=1, bias=False),
-                    nn.InstanceNorm2d(latent_dim),
-                    nn.GELU(),
-                )
-        elif self.use_lidar:
-            self.bev_compressor = nn.Sequential(
-                nn.Conv2d(feat2d_dim*Y+Y, feat2d_dim, kernel_size=3, padding=1, stride=1, bias=False),
-                nn.InstanceNorm2d(latent_dim),
-                nn.GELU(),
-            )
-        else:
-            if self.do_rgbcompress:
-                self.bev_compressor = nn.Sequential(
-                    nn.Conv2d(feat2d_dim*Y, feat2d_dim, kernel_size=3, padding=1, stride=1, bias=False),
-                    nn.InstanceNorm2d(latent_dim),
-                    nn.GELU(),
-                )
-            else:
-                # use simple sum
-                pass
+        self.bev_compressor = nn.Sequential(
+            nn.Conv2d(feat2d_dim*Y + Y + 16*Y, feat2d_dim, kernel_size=3, padding=1, stride=1, bias=False),
+            nn.InstanceNorm2d(latent_dim),
+            nn.GELU(),
+        )
+        # if self.use_radar:
+        #     if self.use_metaradar:
+        #         self.bev_compressor = nn.Sequential(
+        #             nn.Conv2d(feat2d_dim*Y + 16*Y, feat2d_dim, kernel_size=3, padding=1, stride=1, bias=False),
+        #             nn.InstanceNorm2d(latent_dim),
+        #             nn.GELU(),
+        #         )
+        #     else:
+        #         self.bev_compressor = nn.Sequential(
+        #             nn.Conv2d(feat2d_dim*Y+1, feat2d_dim, kernel_size=3, padding=1, stride=1, bias=False),
+        #             nn.InstanceNorm2d(latent_dim),
+        #             nn.GELU(),
+        #         )
+        # elif self.use_lidar:
+        #     self.bev_compressor = nn.Sequential(
+        #         nn.Conv2d(feat2d_dim*Y+Y, feat2d_dim, kernel_size=3, padding=1, stride=1, bias=False),
+        #         nn.InstanceNorm2d(latent_dim),
+        #         nn.GELU(),
+        #     )
+        # else:
+        #     if self.do_rgbcompress:
+        #         self.bev_compressor = nn.Sequential(
+        #             nn.Conv2d(feat2d_dim*Y, feat2d_dim, kernel_size=3, padding=1, stride=1, bias=False),
+        #             nn.InstanceNorm2d(latent_dim),
+        #             nn.GELU(),
+        #         )
+        #     else:
+        #         # use simple sum
+        #         pass
 
         # Decoder
         self.decoder = Decoder(
@@ -410,8 +415,8 @@ class Segnet(nn.Module):
         if self.rand_flip:
             feat_camXs_[self.rgb_flip_index] = torch.flip(feat_camXs_[self.rgb_flip_index], [-1])
         _, C, Hf, Wf = feat_camXs_.shape
-        print('rgb_camXs_', rgb_camXs_.shape)
-        print('feat_camXs_', feat_camXs_.shape)
+        # print('rgb_camXs_', rgb_camXs_.shape)
+        # print('feat_camXs_', feat_camXs_.shape)
 
         sy = Hf/float(H)
         sx = Wf/float(W)
@@ -444,31 +449,31 @@ class Segnet(nn.Module):
                 rad_occ_mem0[self.bev_flip1_index] = torch.flip(rad_occ_mem0[self.bev_flip1_index], [-1])
                 rad_occ_mem0[self.bev_flip2_index] = torch.flip(rad_occ_mem0[self.bev_flip2_index], [-3])
 
-        # bev compressing
-        if self.use_radar:
-            assert(rad_occ_mem0 is not None)
-            if not self.use_metaradar:
-                feat_bev_ = feat_mem.permute(0, 1, 3, 2, 4).reshape(B, self.feat2d_dim*Y, Z, X)
-                rad_bev = torch.sum(rad_occ_mem0, 3).clamp(0,1) # squish the vertical dim
-                feat_bev_ = torch.cat([feat_bev_, rad_bev], dim=1)
-                feat_bev = self.bev_compressor(feat_bev_)
-            else:
-                feat_bev_ = feat_mem.permute(0, 1, 3, 2, 4).reshape(B, self.feat2d_dim*Y, Z, X)
-                rad_bev_ = rad_occ_mem0.permute(0, 1, 3, 2, 4).reshape(B, 16*Y, Z, X)
-                feat_bev_ = torch.cat([feat_bev_, rad_bev_], dim=1)
-                feat_bev = self.bev_compressor(feat_bev_)
-        elif self.use_lidar:
-            assert(rad_occ_mem0 is not None)
-            feat_bev_ = feat_mem.permute(0, 1, 3, 2, 4).reshape(B, self.feat2d_dim*Y, Z, X)
-            rad_bev_ = rad_occ_mem0.permute(0, 1, 3, 2, 4).reshape(B, Y, Z, X)
-            feat_bev_ = torch.cat([feat_bev_, rad_bev_], dim=1)
-            feat_bev = self.bev_compressor(feat_bev_)
-        else: # rgb only
-            if self.do_rgbcompress:
-                feat_bev_ = feat_mem.permute(0, 1, 3, 2, 4).reshape(B, self.feat2d_dim*Y, Z, X)
-                feat_bev = self.bev_compressor(feat_bev_)
-            else:
-                feat_bev = torch.sum(feat_mem, dim=3)
+        # # bev compressing
+        # if self.use_radar:
+        #     assert(rad_occ_mem0 is not None)
+        #     if not self.use_metaradar:
+        #         feat_bev_ = feat_mem.permute(0, 1, 3, 2, 4).reshape(B, self.feat2d_dim*Y, Z, X)
+        #         rad_bev = torch.sum(rad_occ_mem0, 3).clamp(0,1) # squish the vertical dim
+        #         feat_bev_ = torch.cat([feat_bev_, rad_bev], dim=1)
+        #         feat_bev = self.bev_compressor(feat_bev_)
+        #     else:
+        feat_bev_ = feat_mem.permute(0, 1, 3, 2, 4).reshape(B, self.feat2d_dim*Y, Z, X)
+        rad_bev_ = rad_occ_mem0.permute(0, 1, 3, 2, 4).reshape(B, 16*Y+Y, Z, X)
+        feat_bev_ = torch.cat([feat_bev_, rad_bev_], dim=1)
+        feat_bev = self.bev_compressor(feat_bev_)
+        # elif self.use_lidar:
+        #     assert(rad_occ_mem0 is not None)
+        #     feat_bev_ = feat_mem.permute(0, 1, 3, 2, 4).reshape(B, self.feat2d_dim*Y, Z, X)
+        #     rad_bev_ = rad_occ_mem0.permute(0, 1, 3, 2, 4).reshape(B, Y, Z, X)
+        #     feat_bev_ = torch.cat([feat_bev_, rad_bev_], dim=1)
+        #     feat_bev = self.bev_compressor(feat_bev_)
+        # else: # rgb only
+        #     if self.do_rgbcompress:
+        #         feat_bev_ = feat_mem.permute(0, 1, 3, 2, 4).reshape(B, self.feat2d_dim*Y, Z, X)
+        #         feat_bev = self.bev_compressor(feat_bev_)
+        #     else:
+        #         feat_bev = torch.sum(feat_mem, dim=3)
 
         # bev decoder
         out_dict = self.decoder(feat_bev, (self.bev_flip1_index, self.bev_flip2_index) if self.rand_flip else None)

@@ -162,18 +162,22 @@ def run_model(model, loss_fn, d, device='cuda:0', sw=None):
     rad_occ_mem0 = vox_util.voxelize_xyz(rad_xyz_cam0, Z, Y, X, assert_cube=False)
     metarad_occ_mem0 = vox_util.voxelize_xyz_and_feats(rad_xyz_cam0, meta_rad, Z, Y, X, assert_cube=False)
 
-    if not (model.module.use_radar or model.module.use_lidar):
-        in_occ_mem0 = None
-    elif model.module.use_lidar:
-        assert(model.module.use_radar==False) # either lidar or radar, not both
-        assert(model.module.use_metaradar==False) # either lidar or radar, not both
-        in_occ_mem0 = occ_mem0
-    elif model.module.use_radar and model.module.use_metaradar:
-        in_occ_mem0 = metarad_occ_mem0
-    elif model.module.use_radar:
-        in_occ_mem0 = rad_occ_mem0
-    elif model.module.use_metaradar:
-        assert(False) # cannot use_metaradar without use_radar
+    assert(model.module.use_radar==True)
+    assert(model.module.use_metaradar==True)
+    assert(model.module.use_lidar==True)
+    
+    # if not (model.module.use_radar or model.module.use_lidar):
+    #     in_occ_mem0 = None
+    # elif model.module.use_lidar:
+    #     assert(model.module.use_radar==False) # either lidar or radar, not both
+    #     assert(model.module.use_metaradar==False) # either lidar or radar, not both
+    in_occ_mem0 = torch.cat([occ_mem0, metarad_occ_mem0], dim=1) # B,2,Z,Y,X
+    # elif model.module.use_radar and model.module.use_metaradar:
+    #     in_occ_mem0 = metarad_occ_mem0
+    # elif model.module.use_radar:
+    #     in_occ_mem0 = rad_occ_mem0
+    # elif model.module.use_metaradar:
+    #     assert(False) # cannot use_metaradar without use_radar
 
     cam0_T_camXs = cam0_T_camXs
 
