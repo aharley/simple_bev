@@ -13,7 +13,7 @@ This is the official code release for our arXiv paper on BEV perception.
 The lines below should set up a fresh environment with everything you need: 
 ```
 conda create --name bev
-source activate bev 
+conda activate bev 
 conda install pytorch=1.12.0 torchvision=0.13.0 cudatoolkit=11.3 -c pytorch
 conda install pip
 pip install -r requirements.txt
